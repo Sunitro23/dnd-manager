@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Campagne · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <div class="campaign-heading">
+    <div>
+      <p class="eyebrow">Campagne</p>
+      <h1>Choisir un personnage</h1>
+      <p>{{ characters|length }} personnage{{ "s" if characters|length != 1 }} dans la campagne</p>
+    </div>
+    <a class="campaign-create" href="{{ url_for('main.character_create') }}">
+      <span aria-hidden="true">＋</span> Créer
+    </a>
+  </div>
+
+  {% if characters %}
+    {% set labels = {
+      'player': 'Personnages joueurs',
+      'ally': 'Alliés',
+      'npc': 'PNJ',
+      'enemy': 'Ennemis visibles'
+    } %}
+    {% for character_type, group in grouped_characters.items() %}
+      {% if group %}
+        <section class="campaign-roster">
+          <header class="campaign-roster__heading">
+            <h2>{{ labels[character_type] }}</h2>
+            <span>{{ group|length }}</span>
+          </header>
+          <div class="campaign-roster__grid">
+            {% for character in group %}
+              <a class="campaign-character campaign-character--{{ character_type }}"
+                 href="{{ url_for('main.character_detail', character_id=character['id']) }}">
+                <span class="campaign-character__portrait">
+                  {% if character["portrait_filename"] %}
+                    <img src="{{ url_for('characters.portrait', character_id=character['id']) }}"
+                         alt="">
+                  {% else %}
+                    <b aria-hidden="true">{{ character["name"][0]|upper }}</b>
+                  {% endif %}
+                </span>
+                <span class="campaign-character__body">
+                  <span class="campaign-character__title">
+                    <strong>{{ character["name"] }}</strong>
+                    <small>Niveau {{ character["level"] }}</small>
+                  </span>
+                  <span class="campaign-character__meta">
+                    {{ character["class_name"] or "Sans classe" }}
+                    {% if character["species_name"] %} · {{ character["species_name"] }}{% endif %}
+                    {% if character["owner_name"] %} · {{ character["owner_name"] }}{% endif %}
+                  </span>
+                  <span class="campaign-character__hp">
+                    <span>
+                      <b>{{ character["current_hp"] }}</b>
+                      / {{ character["max_hp"] }} PV
+                    </span>
+                    <progress value="{{ character['current_hp'] }}"
+                              max="{{ character['max_hp'] }}">
+                      {{ character["current_hp"] }} / {{ character["max_hp"] }}
+                    </progress>
+                  </span>
+                </span>
+                <span class="campaign-character__arrow" aria-hidden="true">›</span>
+              </a>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    <section class="empty-state">
+      <h2>La campagne est prête.</h2>
+      <p>Le MJ peut maintenant ajouter les premiers personnages.</p>
+    </section>
+  {% endif %}
+{% endblock %}

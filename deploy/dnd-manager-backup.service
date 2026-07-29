@@ -1,0 +1,19 @@
+[Unit]
+Description=Sauvegarde du gestionnaire JDR
+
+[Service]
+Type=oneshot
+User=dnd-manager
+Group=dnd-manager
+ExecStart=/opt/dnd-manager/.venv/bin/python \
+    /opt/dnd-manager/scripts/backup.py \
+    --database /var/lib/dnd-manager/dnd-manager.sqlite3 \
+    --destination /var/backups/dnd-manager \
+    --media /var/lib/dnd-manager/media \
+    --retention-days 7
+ReadWritePaths=/var/backups/dnd-manager
+ReadOnlyPaths=/var/lib/dnd-manager
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true

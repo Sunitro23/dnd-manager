@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Vue MJ · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <div class="page-heading page-heading-actions">
+    <div>
+      <p class="eyebrow">Administration</p>
+      <h1>Vue MJ</h1>
+    </div>
+    <a class="button" href="{{ url_for('main.character_create') }}">
+      Créer un personnage
+    </a>
+  </div>
+
+  <form class="filter-panel" method="get">
+    <div>
+      <label for="filter-type">Type</label>
+      <select id="filter-type" name="type">
+        <option value="">Tous</option>
+        {% for type in character_types %}
+          <option value="{{ type }}" {% if filters["character_type"] == type %}selected{% endif %}>
+            {{ type }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filter-visibility">Visibilité</label>
+      <select id="filter-visibility" name="visibility">
+        <option value="">Toutes</option>
+        {% for visibility in visibilities %}
+          <option value="{{ visibility }}" {% if filters["visibility"] == visibility %}selected{% endif %}>
+            {{ visibility }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filter-owner">Propriétaire</label>
+      <select id="filter-owner" name="owner">
+        <option value="">Tous</option>
+        <option value="none" {% if filters["owner_id"] == "none" %}selected{% endif %}>
+          Sans propriétaire
+        </option>
+        {% for player in players %}
+          <option value="{{ player['id'] }}"
+            {% if filters["owner_id"] == player['id']|string %}selected{% endif %}>
+            {{ player["display_name"] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Filtrer</button>
+    <a class="button button-secondary" href="{{ url_for('main.gm_dashboard') }}">Réinitialiser</a>
+  </form>
+
+  {% if characters %}
+    <div class="character-grid">
+      {% for character in characters %}
+        <article class="character-card">
+          {% if character["portrait_filename"] %}
+            <img class="character-thumbnail"
+                 src="{{ url_for('characters.portrait', character_id=character['id']) }}"
+                 alt="">
+          {% endif %}
+          <a class="character-card-main"
+             href="{{ url_for('main.character_detail', character_id=character['id']) }}">
+            <p class="eyebrow">
+              {{ character["character_type"] }}
+              ·
+              <span aria-hidden="true">
+                {{ "🔒" if character["visibility"] == "gm" else "👁" }}
+              </span>
+              {{ "Secret MJ" if character["visibility"] == "gm" else "Campagne" }}
+            </p>
+            <h2>{{ character["name"] }}</h2>
+            <p class="hp">
+              <strong>{{ character["current_hp"] }}</strong>
+              <span>/ {{ character["max_hp"] }} PV</span>
+            </p>
+            {% if character["owner_name"] %}
+              <p class="owner-name">{{ character["owner_name"] }}</p>
+            {% endif %}
+          </a>
+          <div class="item-actions">
+            <a class="button button-secondary"
+               href="{{ url_for('admin.character_edit', character_id=character['id']) }}">
+              Modifier
+            </a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="empty-state">
+      <h2>Aucun personnage</h2>
+      <p>La création des personnages arrivera dans le prochain lot.</p>
+    </section>
+  {% endif %}
+{% endblock %}

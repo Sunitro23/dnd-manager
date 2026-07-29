@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Administrer {{ character["name"] }} · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <section class="form-panel">
+    <p class="eyebrow">Administration MJ</p>
+    <h1>{{ character["name"] }}</h1>
+    <p class="field-note">
+      Classe : <strong>{{ character["class_name"] }}</strong>.
+      La classe ne peut pas être changée après la création.
+    </p>
+
+    <form id="admin-character-form" method="post"
+          data-hit-die="{{ character['hit_die'] }}"
+          data-class-constitution-bonus="{{ character['class_constitution_bonus'] }}"
+          data-racial-constitution-bonus="{{ character['racial_constitution_bonus'] }}"
+          data-original-species-id="{{ character['species_id'] }}"
+          data-old-max-hp="{{ character['max_hp'] }}"
+          data-current-hp="{{ character['current_hp'] }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="version" value="{{ character['version'] }}">
+
+      <label for="name">Nom du personnage</label>
+      <input id="name" name="name" maxlength="80" required
+             value="{{ request.form.get('name', character['name']) }}">
+
+      <label for="owner_name">Propriétaire</label>
+      <input id="owner_name" name="owner_name" maxlength="80" list="players"
+             value="{{ request.form.get('owner_name', character['owner_name'] or '') }}">
+      <datalist id="players">
+        {% for player in players %}
+          <option value="{{ player['display_name'] }}">
+        {% endfor %}
+      </datalist>
+
+      <div class="field-grid field-grid-three">
+        <div>
+          <label for="character_type">Type</label>
+          {% set selected_type = request.form.get('character_type', character['character_type']) %}
+          <select id="character_type" name="character_type">
+            {% for type in character_types %}
+              <option value="{{ type }}" {% if selected_type == type %}selected{% endif %}>
+                {{ type }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="visibility">Visibilité</label>
+          {% set selected_visibility = request.form.get('visibility', character['visibility']) %}
+          <select id="visibility" name="visibility">
+            {% for visibility in visibilities %}
+              <option value="{{ visibility }}"
+                {% if selected_visibility == visibility %}selected{% endif %}>
+                {{ visibility }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="level">Niveau</label>
+          <input id="level" name="level" type="number"
+                 min="{{ character['level'] }}" max="20" required
+                 value="{{ request.form.get('level', character['level']) }}">
+        </div>
+      </div>
+
+      <label for="species_id">Espèce</label>
+      {% set selected_species = request.form.get('species_id', character['species_id']|string) %}
+      <select id="species_id" name="species_id" required>
+        {% for species_item in species %}
+          <option value="{{ species_item['id'] }}"
+            {% if selected_species == species_item['id']|string %}selected{% endif %}>
+            {{ species_item["name"] }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <h2>Caractéristiques</h2>
+      <p class="field-note">Les six scores doivent toujours utiliser exactement 27 points.</p>
+      <p id="admin-character-preview" class="budget-status" aria-live="polite"></p>
+      <div class="ability-grid">
+        {% set labels = {
+          'strength': 'Force', 'dexterity': 'Dextérité',
+          'constitution': 'Constitution', 'intelligence': 'Intelligence',
+          'wisdom': 'Sagesse', 'charisma': 'Charisme'
+        } %}
+        {% for field in abilities %}
+          <label class="ability-field" for="{{ field }}">
+            <span class="ability-label">
+              <i class="ds3-attribute-icon icon-{{ field }}" aria-hidden="true"></i>
+              {{ labels[field] }}
+            </span>
+            <input id="{{ field }}" name="{{ field }}" type="number"
+                   min="8" max="15" required
+                   value="{{ request.form.get(field, character[field]) }}">
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="form-actions">
+        <button type="submit">Enregistrer</button>
+        <a class="button button-secondary"
+           href="{{ url_for('main.character_detail', character_id=character['id']) }}">
+          Annuler
+        </a>
+      </div>
+    </form>
+  </section>
+  <script src="{{ url_for('static', filename='character-admin.js') }}"></script>
+{% endblock %}

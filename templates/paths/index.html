@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Voies proposées · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <p class="eyebrow">Catalogue</p>
+    <h1 class="icon-heading">
+      <img src="{{ url_for('static', filename='icons/items/spells.png') }}"
+           alt="" aria-hidden="true">
+      Voies proposées
+    </h1>
+    <p>
+      Chaque classe et chaque race propose deux voies. Consulte leurs cinq
+      rangs avant de créer ton personnage.
+    </p>
+    <div class="form-actions">
+      <a class="button" href="#voies-classes">Voies de classe</a>
+      <a class="button button-secondary" href="#voies-raciales">Voies raciales</a>
+    </div>
+  </header>
+
+  <section id="voies-classes">
+    <p class="eyebrow">Classes</p>
+    <h2>Les deux voies de chaque classe</h2>
+    {% for class_item in classes %}
+      <details class="catalog-group">
+        <summary>{{ class_item["name"] }} · d{{ class_item["hit_die"] }} · 2 voies</summary>
+        <div class="details-content">
+        <div class="character-grid">
+          {% for path in class_paths if path["class_id"] == class_item["id"] %}
+            <section class="character-card">
+              <p class="eyebrow">Voie de classe</p>
+              <h3>{{ path["name"] }}</h3>
+              <p>Caractéristiques principales : {{ path["abilities"] }}</p>
+              <details class="rank-details">
+                <summary>Voir les 5 rangs</summary>
+                <ol class="rank-list">
+                {% for rank in path["ranks"] %}
+                  <li>
+                    <strong>Rang {{ rank["rank"] }}</strong>
+                    {% if rank["active"] %}
+                      · Actif · {{ rank["active"]["timing"] }}
+                      · {{ rank["active"]["uses"] }}
+                      <p>{{ rank["active"]["effect"] }}</p>
+                    {% endif %}
+                    {% if rank["passive"] %}
+                      · Passif · {{ rank["passive"]["frequency"] }}
+                      <p>{{ rank["passive"]["effect"] }}</p>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+                </ol>
+              </details>
+            </section>
+          {% endfor %}
+        </div>
+        </div>
+      </details>
+    {% endfor %}
+  </section>
+
+  <section id="voies-raciales">
+    <p class="eyebrow">Races</p>
+    <h2>Les deux voies de chaque race</h2>
+    {% for race in races %}
+      <details class="catalog-group">
+        <summary>{{ race["name"] }} · 2 voies</summary>
+        <div class="details-content">
+        <p>
+          Défenses raciales :
+          physique {{ "%+d"|format(race["physical_bonus"]) }},
+          élémentaire {{ "%+d"|format(race["elemental_bonus"]) }},
+          spirituelle {{ "%+d"|format(race["spiritual_bonus"]) }}.
+        </p>
+        {% if race["traits"] %}<p>{{ race["traits"] }}</p>{% endif %}
+        <div class="character-grid">
+          {% for path in racial_paths if path["species_id"] == race["id"] %}
+            <section class="character-card">
+              <p class="eyebrow">Voie raciale</p>
+              <h3>{{ path["name"] }}</h3>
+              <p>Bonus de caractéristiques : {{ path["abilities"] }}</p>
+              <details class="rank-details">
+                <summary>Voir les 5 rangs</summary>
+                <ol class="rank-list">
+                {% for rank in path["ranks"] %}
+                  <li>
+                    <strong>Rang {{ rank["rank"] }}</strong>
+                    {% if rank["active"] %}
+                      · Actif · {{ rank["active"]["timing"] }}
+                      · {{ rank["active"]["uses"] }}
+                      <p>{{ rank["active"]["effect"] }}</p>
+                    {% endif %}
+                    {% if rank["passive"] %}
+                      · Passif · {{ rank["passive"]["frequency"] }}
+                      <p>{{ rank["passive"]["effect"] }}</p>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+                </ol>
+              </details>
+            </section>
+          {% endfor %}
+        </div>
+        </div>
+      </details>
+    {% endfor %}
+  </section>
+{% endblock %}

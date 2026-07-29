@@ -1,0 +1,226 @@
+.campaign-heading {
+  padding: 1.5rem 0 1.1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2rem, 5vw, 3rem);
+  }
+
+  p:last-child {
+    margin: 0.35rem 0 0;
+    color: var(--muted);
+  }
+}
+
+.campaign-create {
+  min-height: 38px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text);
+  text-decoration: none;
+
+  span {
+    color: var(--accent);
+    font-size: 1.1rem;
+  }
+
+  &:hover {
+    background: #211c0d;
+  }
+}
+
+.campaign-roster {
+  margin-top: 1.5rem;
+}
+
+.campaign-roster__heading {
+  margin-bottom: 0.45rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+
+  h2 {
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  span {
+    color: var(--muted);
+    font-size: $font-xs;
+  }
+}
+
+.campaign-roster__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 0.5rem;
+}
+
+.campaign-character {
+  position: relative;
+  min-width: 0;
+  min-height: 96px;
+  padding: 0.55rem 2rem 0.55rem 0.55rem;
+  border: 1px solid $line-subtle;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  overflow: hidden;
+  background: linear-gradient(90deg, #11120f, #090a08);
+  color: var(--text);
+  text-decoration: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: var(--border);
+  }
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--accent);
+    background: linear-gradient(90deg, #173c37, #0a1715 72%);
+  }
+
+  &:hover::before,
+  &:focus-visible::before {
+    background: var(--accent);
+  }
+}
+
+.campaign-character__portrait {
+  width: 76px;
+  height: 76px;
+  border: 1px solid #4d442d;
+  @include centered-grid;
+  overflow: hidden;
+  background: $surface-deep;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: sepia(0.25) contrast(1.08);
+  }
+
+  b {
+    color: var(--accent);
+    font-size: 1.8rem;
+    font-weight: 400;
+  }
+}
+
+.campaign-character__body,
+.campaign-character__title,
+.campaign-character__meta,
+.campaign-character__hp {
+  display: block;
+  min-width: 0;
+}
+
+.campaign-character__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  strong {
+    @include truncate;
+    font-size: 1.05rem;
+    font-weight: 500;
+  }
+
+  small {
+    flex: none;
+    color: var(--accent);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+  }
+}
+
+.campaign-character__meta {
+  @include truncate;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: $font-xs;
+}
+
+.campaign-character__hp {
+  margin-top: 0.55rem;
+
+  > span {
+    margin-bottom: 0.15rem;
+    display: flex;
+    align-items: baseline;
+    color: var(--muted);
+    font-size: $font-xs;
+  }
+
+  b {
+    margin-right: 0.2rem;
+    color: var(--text);
+    font-size: 1rem;
+  }
+
+  progress {
+    width: 100%;
+    height: 3px;
+    border: 0;
+    display: block;
+    appearance: none;
+    background: #242218;
+
+    &::-webkit-progress-bar {
+      background: #242218;
+    }
+
+    &::-webkit-progress-value {
+      background: $physical-color;
+    }
+
+    &::-moz-progress-bar {
+      background: $physical-color;
+    }
+  }
+}
+
+.campaign-character__arrow {
+  position: absolute;
+  right: 0.7rem;
+  color: var(--border);
+  font-size: 1.5rem;
+}
+
+@media (max-width: $mobile-breakpoint) {
+  .campaign-heading {
+    padding: 1rem;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .campaign-create {
+    justify-content: center;
+  }
+
+  .campaign-roster {
+    padding-inline: 0.55rem;
+  }
+
+  .campaign-roster__grid {
+    grid-template-columns: 1fr;
+  }
+}

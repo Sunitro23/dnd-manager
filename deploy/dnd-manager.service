@@ -1,0 +1,28 @@
+[Unit]
+Description=Gestionnaire de campagne JDR
+After=network.target
+
+[Service]
+Type=simple
+User=dnd-manager
+Group=dnd-manager
+WorkingDirectory=/opt/dnd-manager
+EnvironmentFile=/etc/dnd-manager.env
+ExecStart=/opt/dnd-manager/.venv/bin/gunicorn \
+    --workers 1 \
+    --threads 4 \
+    --bind 127.0.0.1:8000 \
+    --timeout 60 \
+    --access-logfile - \
+    --error-logfile - \
+    'app:create_app()'
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dnd-manager
+
+[Install]
+WantedBy=multi-user.target

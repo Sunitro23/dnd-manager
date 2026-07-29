@@ -1,0 +1,17 @@
+@mixin interactive-reset {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin centered-grid {
+  display: grid;
+  place-items: center;
+}

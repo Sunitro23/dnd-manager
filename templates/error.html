@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Erreur {{ status }} · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <section class="empty-state error-page">
+    <p class="eyebrow">Erreur {{ status }}</p>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    <a class="button" href="{{ url_for('main.campaign') }}">Retour à la campagne</a>
+  </section>
+{% endblock %}

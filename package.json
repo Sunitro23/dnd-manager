@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "lint:css": "stylelint \"static/**/*.scss\"",
+    "stats:css": "node scripts/css_stats.mjs"
+  },
+  "devDependencies": {
+    "postcss": "8.5.25",
+    "postcss-scss": "4.0.9",
+    "stylelint": "16.23.1"
+  }
+}

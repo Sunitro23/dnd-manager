@@ -1,0 +1,1195 @@
+{% extends "base.html" %}
+{% block title %}{{ character["name"] }} · Gestionnaire JDR{% endblock %}
+{% block content %}
+<article class="character-sheet">
+  <header class="character-header">
+    <div>
+      <p class="eyebrow">
+        {{ character["character_type"] }}
+        {% if is_gm() and character["visibility"] == "gm" %}· Secret MJ{% endif %}
+      </p>
+      <h1>{{ character["name"] }}</h1>
+    </div>
+    {% if character["level"] < 20 %}
+      <form class="header-level-up"
+            method="post"
+            action="{{ url_for('characters.level_up', character_id=character['id']) }}"
+            data-confirm="Monter {{ character['name'] }} au niveau {{ character['level'] + 1 }} ?"
+            data-async-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Level up</button>
+      </form>
+    {% endif %}
+  </header>
+  <p class="save-status" aria-live="polite" hidden></p>
+  <nav class="sheet-tabs" aria-label="Sections de la fiche">
+    <button class="is-active" type="button" data-sheet-tab="character"
+            aria-selected="true">Personnage</button>
+    <button type="button" data-sheet-tab="paths" aria-selected="false">Voies</button>
+    <button type="button" data-sheet-tab="equipment"
+            aria-selected="false">Équipement</button>
+  </nav>
+
+  <section class="sheet-overview" data-sheet-panel="character">
+    <div>
+      <h2>Caractéristiques</h2>
+      <div class="ability-grid compact-abilities">
+      {% set abilities = [
+        ('strength', 'Force'), ('dexterity', 'Dextérité'),
+        ('constitution', 'Constitution'), ('intelligence', 'Intelligence'),
+        ('wisdom', 'Sagesse'), ('charisma', 'Charisme')
+      ] %}
+      {% for field, label in abilities %}
+        <div class="ability-display">
+          <span class="ability-label">
+            <i class="ds3-attribute-icon icon-{{ field }}" aria-hidden="true"></i>
+            {{ label }}
+          </span>
+          <strong>{{ effective_scores[field] }}</strong>
+          {% set class_bonus = character["class_" ~ field ~ "_bonus"] %}
+          {% set racial_bonus = character["racial_" ~ field ~ "_bonus"] %}
+          {% set accessory_bonus = accessory_ability_bonuses[field] %}
+          {% if class_bonus or racial_bonus or accessory_bonus %}
+            <small class="ability-breakdown">{{ character[field] }}{% if class_bonus %} + {{ class_bonus }} classe{% endif %}{% if racial_bonus %} + {{ racial_bonus }} voie raciale{% endif %}{% if accessory_bonus %} + {{ accessory_bonus }} accessoires{% endif %}</small>
+          {% endif %}
+          <small class="ability-modifier">{{ "%+d"|format(modifiers[field]) }}</small>
+        </div>
+      {% endfor %}
+      </div>
+    </div>
+    <div class="vitals-panel">
+      <form class="portrait-form"
+            method="post"
+            enctype="multipart/form-data"
+            action="{{ url_for('characters.update_portrait', character_id=character['id']) }}"
+            data-async-form
+            data-image-upload>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="portrait-control" for="character-portrait" title="Changer le portrait">
+          {% if character["portrait_filename"] %}
+            <img src="{{ url_for('characters.portrait', character_id=character['id']) }}"
+                 alt="Portrait de {{ character['name'] }}">
+          {% else %}
+            <span aria-hidden="true">{{ character["name"][0]|upper }}</span>
+            <small>Ajouter une image</small>
+          {% endif %}
+        </label>
+        <input class="sr-only"
+               id="character-portrait"
+               name="portrait"
+               type="file"
+               accept="image/png,image/jpeg,image/webp"
+               required
+               data-submit-on-change>
+      </form>
+      <details class="hp-menu">
+        <summary class="hp-display" title="Gérer les points de vie">
+          <span class="hp-label">PV</span>
+          <strong id="current-hp">{{ character["current_hp"] }}</strong>
+          <span class="hp-maximum">Max {{ character["max_hp"] }}</span>
+        </summary>
+        <div class="hp-popup">
+          <header class="hp-popup__header">
+            <strong>Points de vie</strong>
+            <small>Choisir une action</small>
+          </header>
+          <form class="hp-action hp-action--damage" method="post"
+                  action="{{ url_for('characters.update_hp', character_id=character['id']) }}"
+                  data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="damage">
+            {% for defense_name in ("physical", "elemental", "spiritual") %}
+              <input type="hidden" name="{{ defense_name }}_defense"
+                     value="{{ defenses[defense_name] }}">
+            {% endfor %}
+            <div class="hp-damage-fields">
+              <label>
+                <span>Dégâts</span>
+                <input name="amount" type="number" min="1" value="1"
+                       inputmode="numeric" aria-label="Dégâts bruts">
+              </label>
+              <label>
+                <span>Type</span>
+                <select name="damage_type" aria-label="Type de dégâts">
+                  {% for value, label in [
+                    ("physical", "Physiques"), ("elemental", "Élémentaires"),
+                    ("spiritual", "Spirituels")
+                  ] %}
+                    <option value="{{ value }}">
+                      {{ label }} · Déf. {{ "%+d"|format(defenses[value]) }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+              <button type="submit" aria-label="Appliquer les dégâts">›</button>
+            </div>
+          </form>
+          <form class="hp-action hp-action--heal" method="post"
+                action="{{ url_for('characters.update_hp', character_id=character['id']) }}"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="heal">
+            <label>
+              <span class="hp-action__name"><b aria-hidden="true">+</b> Soin</span>
+              <input name="amount" type="number" min="1" value="1"
+                     inputmode="numeric" aria-label="Nombre de PV soignés">
+            </label>
+            <button type="submit" aria-label="Appliquer le soin">Valider</button>
+          </form>
+          <form class="hp-action hp-action--estus" method="post"
+                action="{{ url_for('characters.update_hp', character_id=character['id']) }}"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="estus">
+            <button type="submit" {% if not character["estus_available"] %}disabled{% endif %}>
+              <span><b aria-hidden="true">◆</b> Estus</span>
+              <small>{{ "Soin complet" if character["estus_available"] else "Déjà utilisé" }}</small>
+            </button>
+          </form>
+          <form class="hp-action hp-action--rest" method="post"
+                action="{{ url_for('characters.update_hp', character_id=character['id']) }}"
+                data-confirm="Se reposer, restaurer les PV et toutes les utilisations ?"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="rest">
+            <button type="submit">
+              <span><b aria-hidden="true">◇</b> Repos au Feu</span>
+              <small>Tout restaurer</small>
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
+    <div>
+      <h2>Défenses</h2>
+      <div class="defense-shields">
+        {% for field, label in [
+          ("physical", "Physique"),
+          ("elemental", "Élémentaire"),
+          ("spiritual", "Spirituelle")
+        ] %}
+          <div class="defense-token defense-{{ field }}" tabindex="0">
+            <div class="defense-face"><strong>{{ "%+d"|format(defenses[field]) }}</strong></div>
+            <div class="defense-breakdown" role="tooltip">
+              <b>{{ label }} · {{ "%+d"|format(defenses[field]) }}</b>
+              {% for part in defense_breakdowns[field] %}
+                <span>
+                  {{ part["label"] }}
+                  <strong>{{ "%+d"|format(part["value"]) }}</strong>
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <dl class="character-facts">
+        <div class="race-fact" tabindex="0">
+          <dt>Race</dt>
+          <dd>{{ character["species_name"] }}</dd>
+          <div class="race-tooltip" role="tooltip">
+            <strong>{{ character["species_name"] }}</strong>
+            {% if character["species_description"] %}
+              <p>{{ character["species_description"] }}</p>
+            {% endif %}
+            {% if character["species_size"] or character["species_speed"] %}
+              <p>
+                {% if character["species_size"] %}Taille {{ character["species_size"] }}{% endif %}
+                {% if character["species_size"] and character["species_speed"] %} · {% endif %}
+                {% if character["species_speed"] %}Vitesse {{ character["species_speed"] }}{% endif %}
+              </p>
+            {% endif %}
+            {% if character["species_traits"] %}
+              <b>Capacités</b>
+              <p>{{ character["species_traits"] }}</p>
+            {% endif %}
+            <p>
+              Défenses raciales :
+              {{ "%+d"|format(character["species_physical_bonus"]) }} physique,
+              {{ "%+d"|format(character["species_elemental_bonus"]) }} élémentaire,
+              {{ "%+d"|format(character["species_spiritual_bonus"]) }} spirituelle.
+            </p>
+          </div>
+        </div>
+        <div><dt>Classe</dt><dd>{{ character["class_name"] }}</dd></div>
+        <div><dt>Niveau</dt><dd>{{ character["level"] }}</dd></div>
+        {% if character["owner_name"] %}
+          <div><dt>Joueur</dt><dd>{{ character["owner_name"] }}</dd></div>
+        {% endif %}
+        <div class="bonus-fact">
+          <dt>Bonus racial actif</dt>
+          <dd>
+          {% if available_racial_bonuses %}
+            <form method="post"
+                  action="{{ url_for('characters.choose_racial_bonus', character_id=character['id']) }}"
+                  data-async-form>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="sr-only" for="racial-bonus-choice">Combinaison active</label>
+              <select id="racial-bonus-choice"
+                      name="racial_path_id"
+                      required
+                      data-submit-on-change>
+                <option value="">Choisir</option>
+                {% for path in available_racial_bonuses %}
+                  <option value="{{ path['id'] }}"
+                          {% if character['racial_path_id'] == path['id'] %}selected{% endif %}>
+                    {{ path["name"] }} · {{ path["abilities"] }}
+                  </option>
+                {% endfor %}
+              </select>
+            </form>
+          {% else %}
+            <span class="muted">Débloque un rang 1 racial.</span>
+          {% endif %}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="progression-panel" data-sheet-panel="paths">
+    <div class="path-balance">
+      <span><strong>{{ available_path_points }}</strong>
+        point{{ "s" if available_path_points != 1 }} disponible{{ "s" if available_path_points != 1 }}</span>
+      {% if false %}
+      <details class="action-menu">
+        <summary>Actions
+          <small>{{ available_actions|length + available_passives|length }}</small>
+        </summary>
+        <div class="action-popup">
+          <section>
+            <h3>Actif</h3>
+          {% if available_actions %}
+            {% for action in available_actions %}
+              <article{% if action["key"] is defined %} data-action-key="{{ action['key'] }}"{% endif %}>
+                <div>
+                  <span>{{ action["source"] }}</span>
+                  <strong>{{ action["name"] }}</strong>
+                  {% if action["timing"] not in ("Action", "Objet") or action["uses"] %}
+                    <small>
+                      {% if action["timing"] not in ("Action", "Objet") %}
+                        {{ action["timing"] }}{% if action["uses"] %} · {% endif %}
+                      {% endif %}
+                      {% if action["uses"] %}<i data-action-uses>{{ action["uses"] }}</i>{% endif %}
+                    </small>
+                  {% endif %}
+                  <p>{{ action["effect"] }}</p>
+                </div>
+                {% if action["remaining"] is defined and action["remaining"] is not none %}
+                  <form method="post"
+                        action="{{ url_for('characters.use_action', character_id=character['id']) }}"
+                        data-async-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="path_type" value="{{ action['path_type'] }}">
+                    <input type="hidden" name="path_id" value="{{ action['path_id'] }}">
+                    <input type="hidden" name="rank" value="{{ action['rank'] }}">
+                    <button class="use-action" type="submit"
+                            {% if action["remaining"] == 0 %}disabled{% endif %}
+                            title="Utiliser {{ action['name'] }}">
+                      <span aria-hidden="true">◆</span>
+                      <span class="sr-only">Utiliser</span>
+                    </button>
+                  </form>
+                {% endif %}
+              </article>
+            {% endfor %}
+          {% else %}
+            <p>Aucune action disponible.</p>
+          {% endif %}
+          </section>
+          <section>
+            <h3>Passif</h3>
+          {% if available_passives %}
+            {% for passive in available_passives %}
+              <article>
+                <span>{{ passive["source"] }}</span>
+                <strong>{{ passive["name"] }}</strong>
+                {% if passive["frequency"] != "Équipé" %}
+                  <small>{{ passive["frequency"] }}</small>
+                {% endif %}
+                <p>{{ passive["effect"] }}</p>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p>Aucun bonus passif.</p>
+          {% endif %}
+          </section>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+    <div class="path-lanes" aria-label="Améliorations des voies">
+      {% for path in paths %}
+        {% set path_key = path["path_type"] ~ ":" ~ path["id"] %}
+        {% set unlocked_count = unlocked_ranks[path_key]|length %}
+        <article class="path-lane">
+          <header>
+            <small>{{ "Classe" if path["path_type"] == "class" else "Race" }}</small>
+            <b>{{ path["name"] }}</b>
+            <span>{{ unlocked_count }}/5</span>
+          </header>
+          <ol class="path-track">
+          {% for rank_number in range(1, 6) %}
+            {% set rank = path["ranks"][rank_number - 1] %}
+            <li class="rank-step
+                       {% if rank_number in unlocked_ranks[path_key] %}is-acquired
+                       {% elif rank_number == unlocked_count + 1 %}is-next
+                       {% else %}is-locked{% endif %}"
+                tabindex="0">
+              {% if rank_number in unlocked_ranks[path_key] %}
+                <span class="rank-node is-unlocked" aria-label="Rang débloqué">✓</span>
+              {% elif rank_number == unlocked_count + 1 and available_path_points > 0 %}
+                <form method="post"
+                      action="{{ url_for('characters.unlock_rank', character_id=character['id']) }}"
+                      data-async-form>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="path_type" value="{{ path['path_type'] }}">
+                  <input type="hidden" name="path_id" value="{{ path['id'] }}">
+                  <button class="rank-node is-buyable" type="submit"
+                          aria-label="Débloquer le rang {{ rank_number }}">+</button>
+                </form>
+              {% elif rank_number == unlocked_count + 1 %}
+                <span class="rank-node is-waiting"
+                      aria-label="Prochain rang : nécessite un point obtenu en montant de niveau">•</span>
+              {% else %}
+                <span class="rank-node is-locked" aria-label="Rang verrouillé"></span>
+              {% endif %}
+              <span class="rank-name"><small>Rang {{ rank_number }}</small>{{ rank["name"] }}</span>
+              <div class="rank-tooltip" role="tooltip">
+                <b>{{ path["name"] }} · {{ rank["name"] }}</b>
+                {% if rank["active"] %}
+                  <small>Actif · {{ rank["active"]["timing"] }}
+                    · {{ rank["_active_uses"] }}</small>
+                  <p>{{ rank["_active_effect"] }}</p>
+                {% endif %}
+                {% if rank["passive"] %}
+                  <small>Passif · {{ rank["passive"]["frequency"] }}</small>
+                  <p>{{ rank["_passive_effect"] }}</p>
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+          </ol>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="inline-inventory" data-sheet-panel="equipment">
+    {% set slots = namespace(hands=0, accessories=0) %}
+    {% for item in equipment if item["equipped"] %}
+      {% if item["item_type"] in ("weapon", "shield", "tool") %}
+        {% set slots.hands = slots.hands + 1 %}
+      {% elif item["item_type"] == "accessory" %}
+        {% set slots.accessories = slots.accessories + 1 %}
+      {% endif %}
+    {% endfor %}
+    <header>
+      <h2>Équipement</h2>
+      <small>Mains {{ slots.hands }}/2 · Accessoires {{ slots.accessories }}/4</small>
+      <div class="inventory-head-actions">
+        <details class="inventory-add">
+          <summary title="Ajouter un objet" aria-label="Ajouter un objet">+</summary>
+          <div>
+            {% for value, label in [
+              ("weapon", "Arme"), ("shield", "Bouclier"),
+              ("armor", "Armure"), ("accessory", "Anneau"),
+              ("tool", "Outil"), ("consumable", "Consommable"),
+              ("quest", "Objet clé"), ("spell", "Sort")
+            ] %}
+              <form method="post"
+                    action="{{ url_for('characters.equipment_quick_create',
+                      character_id=character['id']) }}"
+                    data-async-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" name="item_type" value="{{ value }}">{{ label }}</button>
+              </form>
+            {% endfor %}
+          </div>
+        </details>
+        <details class="action-menu">
+          <summary>Actions <small>{{ available_actions|length }}</small></summary>
+          <button class="action-backdrop" type="button"
+                  data-action-dismiss aria-label="Fermer les actions"></button>
+          <div class="action-popup">
+            {% for category in ("Compétences", "Sorts", "Consommables") %}
+              {% set category_actions = available_actions
+                |selectattr("category", "equalto", category)|list %}
+              {% if category_actions %}
+                <section>
+                  <h3>{{ category }}</h3>
+                  {% for action in category_actions %}
+                    <article{% if action["key"] is defined %} data-action-key="{{ action['key'] }}"{% endif %}>
+                      <details class="action-detail">
+                        <summary>
+                          <span>{{ action["source"] }}</span>
+                          <strong>{{ action["name"] }}</strong>
+                          {% if action["timing"] not in ("Action", "Objet") or action["uses"] %}
+                            <small>
+                              {% if action["timing"] not in ("Action", "Objet") %}
+                                {{ action["timing"] }}{% if action["uses"] %} · {% endif %}
+                              {% endif %}
+                              {% if action["uses"] %}<i data-action-uses>{{ action["uses"] }}</i>{% endif %}
+                            </small>
+                          {% endif %}
+                        </summary>
+                        <p>{{ action["effect"] }}</p>
+                      </details>
+                      {% if action["remaining"] is defined and action["remaining"] is not none %}
+                        <form method="post"
+                              action="{{ url_for('characters.use_action', character_id=character['id']) }}"
+                              data-async-form>
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="hidden" name="path_type" value="{{ action['path_type'] }}">
+                          <input type="hidden" name="path_id" value="{{ action['path_id'] }}">
+                          <input type="hidden" name="rank" value="{{ action['rank'] }}">
+                          <button class="use-action" type="submit"
+                                  {% if action["remaining"] == 0 %}disabled{% endif %}
+                                  title="Utiliser {{ action['name'] }}">
+                            <span aria-hidden="true">◆</span>
+                            <span class="sr-only">Utiliser</span>
+                          </button>
+                        </form>
+                      {% endif %}
+                    </article>
+                  {% endfor %}
+                </section>
+              {% endif %}
+            {% endfor %}
+            {% if not available_actions %}
+              <p class="action-empty">Aucune action disponible.</p>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </header>
+    {% set inventory_types = {
+      "weapon": "Arme", "armor": "Armure", "shield": "Bouclier",
+      "accessory": "Accessoire", "tool": "Outil",
+      "consumable": "Consommable", "spell": "Sort",
+      "quest": "Objet clé", "other": "Objet"
+    } %}
+    {% set inventory_damage_types = {
+      "physical": "physiques", "elemental": "élémentaires",
+      "spiritual": "spirituels"
+    } %}
+    {% set inventory_stats = {
+      "FOR": "Force", "DEX": "Dextérité", "CON": "Constitution",
+      "INT": "Intelligence", "SAG": "Sagesse", "CHA": "Charisme"
+    } %}
+    {% set inventory_stat_classes = {
+      "FOR": "stat-force", "DEX": "stat-dexterity",
+      "CON": "stat-constitution", "INT": "stat-intelligence",
+      "SAG": "stat-wisdom", "CHA": "stat-charisma"
+    } %}
+    <div class="inventory-view" data-inventory-view>
+      {% set inventory_icons = {
+        "weapon": "weapon.png", "armor": "armor.png",
+        "shield": "shield.png", "accessory": "ring.png",
+        "tool": "box.png", "consumable": "estus.png",
+        "spell": "spells.png", "quest": "hand_with_soul.png",
+        "other": "bag.png"
+      } %}
+      {% set slot_definitions = [
+        ("right_hand", "Main droite", "right_hand.png"),
+        ("left_hand", "Main gauche", "left_hand.png"),
+        ("armor", "Armure", "armor.png"),
+        ("ring_1", "Anneau I", "ring.png"),
+        ("ring_2", "Anneau II", "ring.png"),
+        ("ring_3", "Anneau III", "ring.png"),
+        ("ring_4", "Anneau IV", "ring.png")
+      ] %}
+      {% set slot_labels = {
+        "right_hand": "Main droite", "left_hand": "Main gauche",
+        "armor": "Armure", "ring_1": "Anneau I", "ring_2": "Anneau II",
+        "ring_3": "Anneau III", "ring_4": "Anneau IV"
+      } %}
+      <section class="equipment-slots">
+        <h3>Emplacements équipés</h3>
+        <div>
+          {% for slot, label, empty_icon in slot_definitions %}
+            {% set slot_items = equipment|selectattr("slot", "equalto", slot)|list %}
+            {% set item = slot_items|first %}
+            <article class="equipment-slot {{ 'has-item' if item }}">
+              {% if item %}
+                <form method="post"
+                      action="{{ url_for('characters.equipment_toggle',
+                        character_id=character['id'], equipment_id=item['id']) }}"
+                      data-async-form>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" title="Retirer {{ item['name'] }}">
+                    <span class="equipment-slot-icon">
+                      <img class="equipment-slot-base"
+                           src="{{ url_for('characters.interface_asset',
+                             asset_path='empty.png') }}" alt="">
+                      <img class="equipment-slot-dish"
+                           src="{{ url_for('characters.interface_asset',
+                             asset_path='menu-dish.png') }}" alt="">
+                      <img class="equipment-slot-art"
+                           src="{{ url_for('static',
+                             filename='icons/items/' ~ inventory_icons.get(item['item_type'], 'bag.png'))
+                             if not item['icon_path'] else
+                             url_for('characters.item_icon', icon_path=item['icon_path']) }}"
+                           alt="">
+                    </span>
+                    <strong>{{ item["name"] }}</strong>
+                  </button>
+                </form>
+              {% else %}
+                <img src="{{ url_for('characters.interface_asset',
+                  asset_path=empty_icon) }}"
+                     alt="" aria-hidden="true">
+                <strong>Vide</strong>
+              {% endif %}
+              <small>{{ label }}</small>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="inventory-browser">
+        <nav class="inventory-categories" aria-label="Catégories d’inventaire">
+          {% for value, label, icon in [
+            ("all", "Tout", "sprite-1-1.png"),
+            ("weapon", "Armes", "sprite-1-2.png"),
+            ("armor shield", "Protections", "sprite-2-1.png"),
+            ("accessory", "Anneaux", "sprite-2-4.png"),
+            ("tool", "Outils", "sprite-1-4.png"),
+            ("consumable quest", "Objets", "sprite-3-1.png"),
+            ("spell", "Sorts", "sprite-2-5.png")
+          ] %}
+            <button class="{{ 'is-active' if loop.first }}" type="button"
+                    data-inventory-category="{{ value }}"
+                    title="{{ label }}" aria-label="{{ label }}">
+              <img src="{{ url_for('characters.interface_asset',
+                asset_path=icon) }}" alt="">
+              <span>{{ label }}</span>
+            </button>
+          {% endfor %}
+        </nav>
+        <div class="inventory-browser-body">
+          <div class="inventory-item-list" aria-label="Objets de l’inventaire">
+            {% for item in equipment %}
+              <article class="inventory-item-row {{ 'is-equipped' if item['equipped'] }} {{ 'is-selected' if loop.first }}"
+                       data-inventory-item="{{ item['id'] }}"
+                       data-item-type="{{ item['item_type'] }}">
+                <button type="button" data-inventory-select="{{ item['id'] }}">
+                  <span class="inventory-item-icon">
+                    <img class="inventory-item-dish"
+                         src="{{ url_for('characters.interface_asset',
+                           asset_path='menu-dish.png') }}" alt="">
+                    <img class="inventory-item-art"
+                         src="{{ url_for('static',
+                           filename='icons/items/' ~ inventory_icons.get(item['item_type'], 'bag.png'))
+                           if not item['icon_path'] else
+                           url_for('characters.item_icon', icon_path=item['icon_path']) }}"
+                         alt="">
+                    {% if item["equipped"] %}
+                      <img class="inventory-item-stamp"
+                           src="{{ url_for('characters.interface_asset',
+                             asset_path='stamp.png') }}"
+                           alt="Équipé" title="Équipé">
+                    {% endif %}
+                  </span>
+                  <span class="inventory-item-copy">
+                    <strong>{{ item["name"] }}</strong>
+                    <small>
+                      {% if item["item_type"] in ("weapon", "spell") %}
+                        <span class="damage-{{ item['damage_type'] or 'neutral' }}">
+                          {{ item["damage_dice"] or inventory_types.get(item["item_type"]) }}
+                          {{ inventory_damage_types.get(item["damage_type"], "") }}
+                        </span>
+                      {% elif item["item_type"] in ("armor", "shield") %}
+                        <span class="defense-physical">
+                          Défense physique {{ "%+d"|format(item["physical_bonus"]) }}
+                        </span> ·
+                        <span class="defense-elemental">
+                          Défense élémentaire {{ "%+d"|format(item["elemental_bonus"]) }}
+                        </span> ·
+                        <span class="defense-spiritual">
+                          Défense spirituelle {{ "%+d"|format(item["spiritual_bonus"]) }}
+                        </span>
+                      {% elif item["item_type"] == "accessory" %}
+                        <span class="{{ inventory_stat_classes.get(item['stat'], 'stat-neutral') }}">
+                          {{ inventory_stats.get(item["stat"], "Anneau") }}
+                          {{ "%+d"|format(item["stat_bonus"]) if item["stat_bonus"] else "" }}
+                        </span>
+                      {% else %}
+                        {{ item["effect"] or inventory_types.get(item["item_type"], "Objet") }}
+                      {% endif %}
+                    </small>
+                  </span>
+                  {% if item["item_type"] in ("consumable", "quest")
+                        and item["quantity"] > 1 %}
+                    <b>×{{ item["quantity"] }}</b>
+                  {% endif %}
+                </button>
+                {% if item["item_type"] in ("weapon", "shield", "tool", "armor", "accessory") %}
+                  <form method="post"
+                        action="{{ url_for('characters.equipment_toggle',
+                          character_id=character['id'], equipment_id=item['id']) }}"
+                        data-async-form data-equip-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">{{ 'Retirer' if item['equipped'] else 'Équiper' }}</button>
+                  </form>
+                {% endif %}
+              </article>
+            {% else %}
+              <p class="inventory-empty">Inventaire vide. Utilise « Modifier » pour ajouter un objet.</p>
+            {% endfor %}
+          </div>
+          <aside class="inventory-details">
+            {% for item in equipment %}
+              <article data-inventory-detail="{{ item['id'] }}" {{ "hidden" if not loop.first }}>
+                <form class="inventory-detail-form" method="post"
+                      action="{{ url_for('characters.equipment_edit',
+                        character_id=character['id'], equipment_id=item['id']) }}"
+                      data-async-form>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="item_type" value="{{ item['item_type'] }}">
+                  <input type="hidden" name="equipped" value="{{ item['equipped'] }}">
+                  <input type="hidden" name="icon_path" value="{{ item['icon_path'] }}">
+                  {% if item["item_type"] not in ("armor", "shield") %}
+                    <input type="hidden" name="physical_bonus" value="0">
+                    <input type="hidden" name="elemental_bonus" value="0">
+                    <input type="hidden" name="spiritual_bonus" value="0">
+                  {% endif %}
+                  {% if item["item_type"] not in ("weapon", "spell") %}
+                    <input type="hidden" name="damage_dice" value="">
+                    <input type="hidden" name="damage_type" value="">
+                  {% endif %}
+                  {% if item["item_type"] != "spell" %}
+                    <input type="hidden" name="uses" value="">
+                  {% endif %}
+                  {% if item["item_type"] != "accessory" %}
+                    <input type="hidden" name="stat" value="">
+                    <input type="hidden" name="stat_bonus" value="0">
+                  {% endif %}
+                  {% if item["item_type"] not in ("tool", "consumable", "quest", "spell") %}
+                    <input type="hidden" name="effect" value="{{ item['effect'] }}">
+                  {% endif %}
+                  <header>
+                    <small>{{ inventory_types.get(item["item_type"], "Objet") }}</small>
+                    <input class="inventory-detail-name" name="name" maxlength="100"
+                           value="{{ item['name'] }}" aria-label="Nom"
+                           data-submit-on-change required>
+                  </header>
+                <button class="inventory-icon-preview" type="button"
+                        data-icon-picker-toggle
+                        title="Changer l’icône"
+                        aria-label="Changer l’icône">
+                  <img src="{{ url_for('static',
+                    filename='icons/items/' ~ inventory_icons.get(item['item_type'], 'bag.png'))
+                    if not item['icon_path'] else
+                    url_for('characters.item_icon', icon_path=item['icon_path']) }}"
+                       data-item-icon-preview
+                       alt="">
+                </button>
+                <details class="item-icon-picker"
+                         data-icon-picker
+                         data-icon-type="{{ item['item_type'] }}"
+                         data-icon-url="{{ url_for('characters.item_icon_library',
+                           item_type=item['item_type']) }}">
+                  <summary hidden>Galerie d’icônes</summary>
+                  <div data-icon-options></div>
+                  <button type="button" data-load-more-icons hidden>Plus d’icônes</button>
+                </details>
+                <div class="inventory-detail-fields">
+                  {% if item["item_type"] in ("weapon", "spell") %}
+                    <label class="damage-{{ item['damage_type'] or 'neutral' }}">Dés
+                      <input name="damage_dice" maxlength="50"
+                             value="{{ item['damage_dice'] }}" placeholder="2d6"
+                             data-submit-on-change>
+                    </label>
+                    <label class="damage-{{ item['damage_type'] or 'neutral' }}">Type de dégâts
+                      <select name="damage_type" data-submit-on-change>
+                        {% for value, label in [
+                          ("", "—"), ("physical", "Physique"),
+                          ("elemental", "Élémentaire"), ("spiritual", "Spirituel")
+                        ] %}
+                          <option value="{{ value }}"
+                            {{ "selected" if item["damage_type"] == value }}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                  {% elif item["item_type"] in ("armor", "shield") %}
+                    {% for field, label, defense_class in [
+                      ("physical_bonus", "Défense physique", "defense-physical"),
+                      ("elemental_bonus", "Défense élémentaire", "defense-elemental"),
+                      ("spiritual_bonus", "Défense spirituelle", "defense-spiritual")
+                    ] %}
+                      <label class="{{ defense_class }}">{{ label }}
+                        <input name="{{ field }}" type="number" value="{{ item[field] }}"
+                               data-submit-on-change>
+                      </label>
+                    {% endfor %}
+                  {% elif item["item_type"] == "accessory" %}
+                    <label class="{{ inventory_stat_classes.get(item['stat'], 'stat-neutral') }}">
+                      Statistique
+                      <select name="stat" data-submit-on-change>
+                        <option value="">—</option>
+                        {% for value, label in [
+                          ("FOR", "Force"), ("DEX", "Dextérité"),
+                          ("CON", "Constitution"), ("INT", "Intelligence"),
+                          ("SAG", "Sagesse"), ("CHA", "Charisme")
+                        ] %}
+                          <option value="{{ value }}"
+                            {{ "selected" if item["stat"] == value }}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label class="{{ inventory_stat_classes.get(item['stat'], 'stat-neutral') }}">
+                      Bonus
+                      <input name="stat_bonus" type="number" value="{{ item['stat_bonus'] }}"
+                             data-submit-on-change>
+                    </label>
+                  {% endif %}
+                  {% if item["item_type"] == "spell" %}
+                    <label>Utilisations
+                      <input name="uses" maxlength="80" value="{{ item['uses'] }}"
+                             placeholder="2 fois par repos" data-submit-on-change>
+                    </label>
+                  {% endif %}
+                  {% if item["item_type"] in ("consumable", "quest") %}
+                    <label>Quantité
+                      <input name="quantity" type="number" min="1"
+                             value="{{ item['quantity'] }}" data-submit-on-change required>
+                    </label>
+                  {% else %}
+                    <input name="quantity" type="hidden" value="1">
+                  {% endif %}
+                </div>
+                {% if item["item_type"] in ("tool", "consumable", "quest", "spell") %}
+                  <label class="inventory-detail-text">Effets
+                    <textarea name="effect" maxlength="300"
+                              data-submit-on-change>{{ item["effect"] }}</textarea>
+                  </label>
+                {% endif %}
+                {% if item["item_type"] in ("tool", "consumable", "quest", "spell") %}
+                  <input type="hidden" name="notes" value="{{ item['notes'] }}">
+                {% else %}
+                  <label class="inventory-detail-text">Effets
+                    <textarea name="notes" maxlength="2000"
+                              data-submit-on-change>{{ item["notes"] }}</textarea>
+                  </label>
+                {% endif %}
+                </form>
+                <form class="inventory-detail-delete" method="post"
+                      action="{{ url_for('characters.equipment_delete',
+                        character_id=character['id'], equipment_id=item['id']) }}"
+                      data-confirm="Supprimer {{ item['name'] }} ?"
+                      data-async-form>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit">Supprimer</button>
+                </form>
+              </article>
+            {% endfor %}
+          </aside>
+        </div>
+      </section>
+    </div>
+    <div class="inventory-editor" data-inventory-editor hidden>
+    {% set item_sections = [
+      ("armor", "Armures"), ("shield", "Boucliers"),
+      ("weapon", "Armes"), ("tool", "Outils"),
+      ("accessory", "Accessoires"), ("consumable", "Consommables"),
+      ("quest", "Items clés"), ("spell", "Sorts")
+    ] %}
+    {% set stats = [
+      ("FOR", "Force"), ("DEX", "Dextérité"), ("CON", "Constitution"),
+      ("INT", "Intelligence"), ("SAG", "Sagesse"), ("CHA", "Charisme")
+    ] %}
+    {% for item_type, title in item_sections %}
+      <section class="inline-item-section item-{{ item_type }}">
+        <h3>{{ title }}</h3>
+        <div class="inline-item-labels">
+          <span>Nom</span>
+          {% if item_type in ("weapon", "spell") %}
+            <span>Dés</span><span>Type de dégâts</span>
+            {% if item_type == "spell" %}<span>Effet</span>{% endif %}
+          {% elif item_type in ("armor", "shield") %}
+            <span>Défense physique</span>
+            <span>Défense élémentaire</span>
+            <span>Défense spirituelle</span>
+          {% elif item_type == "accessory" %}
+            <span>Stat</span><span>Bonus</span>
+          {% else %}
+            <span>Effet</span>
+            {% if item_type in ("consumable", "quest") %}<span>Qté</span>{% endif %}
+          {% endif %}
+          <span></span>
+          {% if item_type != "spell" %}<span></span>{% endif %}
+        </div>
+        {% for item in equipment if item["item_type"] == item_type %}
+          <div class="inline-item-line">
+            <form method="post"
+                  action="{{ url_for('characters.equipment_edit',
+                    character_id=character['id'], equipment_id=item['id']) }}"
+                  data-async-form>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="item_type" value="{{ item_type }}">
+              <input type="hidden" name="notes" value="{{ item['notes'] }}">
+              <input type="hidden" name="icon_path" value="{{ item['icon_path'] }}">
+              <input type="hidden" name="equipped" value="{{ item['equipped'] }}">
+              {% if item_type not in ("consumable", "quest") %}
+                <input type="hidden" name="quantity" value="{{ item['quantity'] }}">
+              {% endif %}
+              {% if item_type not in ("armor", "shield") %}
+                <input type="hidden" name="physical_bonus" value="0">
+                <input type="hidden" name="elemental_bonus" value="0">
+                <input type="hidden" name="spiritual_bonus" value="0">
+              {% endif %}
+              {% if item_type not in ("weapon", "spell") %}
+                <input type="hidden" name="damage_dice" value="">
+                <input type="hidden" name="damage_type" value="">
+              {% endif %}
+              {% if item_type != "spell" %}<input type="hidden" name="uses" value="">{% endif %}
+              {% if item_type != "accessory" %}
+                <input type="hidden" name="stat" value="">
+                <input type="hidden" name="stat_bonus" value="0">
+              {% endif %}
+              {% if item_type not in ("tool", "consumable", "quest", "spell") %}
+                <input type="hidden" name="effect" value="{{ item['effect'] }}">
+              {% endif %}
+
+              <input name="name" maxlength="100" value="{{ item['name'] }}"
+                     aria-label="Nom" data-submit-on-change required>
+              {% if item_type in ("weapon", "spell") %}
+                <input name="damage_dice" maxlength="50" value="{{ item['damage_dice'] }}"
+                       placeholder="2d6" aria-label="Dés" data-submit-on-change>
+                <select name="damage_type" aria-label="Type de dégâts" data-submit-on-change>
+                  {% for value, label in [
+                    ("", "—"), ("physical", "Physique"),
+                    ("elemental", "Élémentaire"), ("spiritual", "Spirituel")
+                  ] %}
+                    <option value="{{ value }}"
+                      {{ "selected" if item["damage_type"] == value }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                {% if item_type == "spell" %}
+                  <input name="effect" maxlength="300" value="{{ item['effect'] }}"
+                         placeholder="Effet du sort…" aria-label="Effet" data-submit-on-change>
+                {% endif %}
+              {% elif item_type in ("armor", "shield") %}
+                <input name="physical_bonus" type="number" value="{{ item['physical_bonus'] }}"
+                       aria-label="Défense physique" data-submit-on-change>
+                <input name="elemental_bonus" type="number" value="{{ item['elemental_bonus'] }}"
+                       aria-label="Défense élémentaire" data-submit-on-change>
+                <input name="spiritual_bonus" type="number" value="{{ item['spiritual_bonus'] }}"
+                       aria-label="Défense spirituelle" data-submit-on-change>
+              {% elif item_type == "accessory" %}
+                <select name="stat" aria-label="Statistique" data-submit-on-change>
+                  <option value="">—</option>
+                  {% for value, label in stats %}
+                    <option value="{{ value }}"
+                      {{ "selected" if item["stat"] == value }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <input name="stat_bonus" type="number" value="{{ item['stat_bonus'] }}"
+                       aria-label="Bonus" data-submit-on-change>
+              {% else %}
+                <input name="effect" maxlength="300" value="{{ item['effect'] }}"
+                       placeholder="Effet…" aria-label="Effet" data-submit-on-change>
+                {% if item_type in ("consumable", "quest") %}
+                  <input name="quantity" type="number" min="1" value="{{ item['quantity'] }}"
+                         aria-label="Quantité" data-submit-on-change required>
+                {% endif %}
+              {% endif %}
+            </form>
+            {% if item_type != "spell" %}
+              <form method="post"
+                    action="{{ url_for('characters.equipment_toggle',
+                      character_id=character['id'], equipment_id=item['id']) }}"
+                    data-async-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="inline-equip-button {{ 'is-equipped' if item['equipped'] }}"
+                        type="submit"
+                        aria-label="{{ 'Retirer' if item['equipped'] else 'Équiper' }}"
+                        title="{{ 'Retirer' if item['equipped'] else 'Équiper' }}">
+                  {{ "◆" if item["equipped"] else "◇" }}
+                </button>
+              </form>
+            {% endif %}
+            <form method="post"
+                  action="{{ url_for('characters.equipment_delete',
+                    character_id=character['id'], equipment_id=item['id']) }}"
+                  data-confirm="Supprimer {{ item['name'] }} ?"
+                  data-async-form>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="equipment-delete" type="submit" aria-label="Supprimer">×</button>
+            </form>
+          </div>
+        {% endfor %}
+
+        <form class="inline-item-line is-new"
+              method="post"
+              action="{{ url_for('characters.equipment_create', character_id=character['id']) }}"
+              data-async-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="item_type" value="{{ item_type }}">
+          <input type="hidden" name="notes" value="">
+          <input type="hidden" name="equipped" value="0">
+          {% if item_type not in ("consumable", "quest") %}
+            <input type="hidden" name="quantity" value="1">
+          {% endif %}
+          {% if item_type not in ("armor", "shield") %}
+            <input type="hidden" name="physical_bonus" value="0">
+            <input type="hidden" name="elemental_bonus" value="0">
+            <input type="hidden" name="spiritual_bonus" value="0">
+          {% endif %}
+          {% if item_type not in ("weapon", "spell") %}
+            <input type="hidden" name="damage_dice" value="">
+            <input type="hidden" name="damage_type" value="">
+          {% endif %}
+          {% if item_type != "spell" %}<input type="hidden" name="uses" value="">{% endif %}
+          {% if item_type != "accessory" %}
+            <input type="hidden" name="stat" value="">
+            <input type="hidden" name="stat_bonus" value="0">
+          {% endif %}
+          {% if item_type not in ("tool", "consumable", "quest", "spell") %}
+            <input type="hidden" name="effect" value="">
+          {% endif %}
+
+          <input name="name" maxlength="100" placeholder="Ajouter…" aria-label="Nom" required>
+          {% if item_type in ("weapon", "spell") %}
+            <input name="damage_dice" maxlength="50" placeholder="2d6" aria-label="Dés">
+            <select name="damage_type" aria-label="Type de dégâts">
+              <option value="">—</option><option value="physical">Physique</option>
+              <option value="elemental">Élémentaire</option>
+              <option value="spiritual">Spirituel</option>
+            </select>
+            {% if item_type == "spell" %}
+              <input name="effect" maxlength="300" placeholder="Effet du sort…" aria-label="Effet">
+            {% endif %}
+          {% elif item_type in ("armor", "shield") %}
+            <input name="physical_bonus" type="number" value="0" aria-label="Défense physique">
+            <input name="elemental_bonus" type="number" value="0" aria-label="Défense élémentaire">
+            <input name="spiritual_bonus" type="number" value="0" aria-label="Défense spirituelle">
+          {% elif item_type == "accessory" %}
+            <select name="stat" aria-label="Statistique">
+              <option value="">—</option>
+              {% for value, label in stats %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+            <input name="stat_bonus" type="number" value="0" aria-label="Bonus">
+          {% else %}
+            <input name="effect" maxlength="300" placeholder="Effet…" aria-label="Effet">
+            {% if item_type in ("consumable", "quest") %}
+              <input name="quantity" type="number" min="1" value="1" aria-label="Quantité" required>
+            {% endif %}
+          {% endif %}
+          <button type="submit" aria-label="Ajouter">+</button>
+        </form>
+      </section>
+    {% endfor %}
+    </div>
+  </section>
+
+  {% if false %}
+  <section class="simple-equipment" data-sheet-panel="equipment">
+    <header>
+      <h2>Équipement <small>{{ equipment|length }} objet{{ "s" if equipment|length != 1 }}</small></h2>
+      <a class="button"
+         href="{{ url_for('characters.equipment_create', character_id=character['id']) }}">
+        + Ajouter
+      </a>
+    </header>
+
+    {% set groups = [
+      (("weapon", "spell"), "Armes et sorts", ("Nom", "Dés", "Type de dégâts")),
+      (("armor", "shield"), "Armures et boucliers",
+        ("Nom", "Défense physique", "Défense élémentaire", "Défense spirituelle")),
+      (("tool",), "Outils", ("Nom", "Effet")),
+      (("accessory",), "Accessoires", ("Nom", "Stat", "Bonus")),
+      (("consumable", "quest"), "Consommables et items clés", ("Nom", "Effet", "Qté"))
+    ] %}
+    {% set damage_types = {
+      "physical": "Physique", "elemental": "Élémentaire", "spiritual": "Spirituel"
+    } %}
+    {% for types, title, columns in groups %}
+      {% set ns = namespace(items=[]) %}
+      {% for item in equipment if item["item_type"] in types %}
+        {% set ns.items = ns.items + [item] %}
+      {% endfor %}
+      {% if ns.items %}
+        <section class="simple-item-group">
+          <h3>{{ title }}</h3>
+          <div class="simple-item-head simple-cols-{{ columns|length }}">
+            {% for column in columns %}<span>{{ column }}</span>{% endfor %}
+            <span></span>
+          </div>
+          {% for item in ns.items %}
+            <div class="simple-item-row simple-cols-{{ columns|length }}">
+              <strong>{{ item["name"] }}</strong>
+              {% if item["item_type"] in ("weapon", "spell") %}
+                <span>{{ item["damage_dice"] or "—" }}</span>
+                <span>{{ damage_types.get(item["damage_type"], item["damage_type"] or "—") }}</span>
+              {% elif item["item_type"] in ("armor", "shield") %}
+                <span>{{ "%+d"|format(item["physical_bonus"]) }}</span>
+                <span>{{ "%+d"|format(item["elemental_bonus"]) }}</span>
+                <span>{{ "%+d"|format(item["spiritual_bonus"]) }}</span>
+              {% elif item["item_type"] == "accessory" %}
+                <span>{{ item["stat"] or "—" }}</span>
+                <span>{{ "%+d"|format(item["stat_bonus"]) }}</span>
+              {% else %}
+                <span>{{ item["effect"] or "—" }}</span>
+                {% if item["item_type"] in ("consumable", "quest") %}
+                  <span>×{{ item["quantity"] }}</span>
+                {% endif %}
+              {% endif %}
+              <a href="{{ url_for('characters.equipment_edit',
+                        character_id=character['id'], equipment_id=item['id']) }}">
+                Modifier
+              </a>
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endfor %}
+
+    {% set other_items = equipment|selectattr("item_type", "equalto", "other")|list %}
+    {% if other_items %}
+      <section class="simple-item-group">
+        <h3>Autres</h3>
+        {% for item in other_items %}
+          <div class="simple-item-row simple-cols-2">
+            <strong>{{ item["name"] }}</strong>
+            <span>{{ item["effect"] or "—" }}</span>
+            <a href="{{ url_for('characters.equipment_edit',
+                      character_id=character['id'], equipment_id=item['id']) }}">Modifier</a>
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+    {% if not equipment %}
+      <p class="simple-equipment-empty">Aucun équipement pour le moment.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if false %}
+  <section class="equipment-panel" data-sheet-panel="equipment">
+    <div class="details-content equipment-content">
+    <div class="equipment-heading">
+      <h2>Équipement <small>{{ equipment|length }} objet{{ "s" if equipment|length != 1 }}</small></h2>
+    </div>
+
+    {% set item_types = {
+      "weapon": "Arme", "armor": "Armure", "shield": "Bouclier",
+      "accessory": "Accessoire", "tool": "Outil",
+      "consumable": "Consommable", "spell": "Sort",
+      "quest": "Quête", "other": "Objet"
+    } %}
+    <div class="editable-equipment">
+      <div class="editable-equipment-head" aria-hidden="true">
+        <span>Objet</span><span>Type</span><span>Effet</span>
+        <span>Qté</span><span>Équipé</span><span></span>
+      </div>
+      {% for item in equipment %}
+        <div class="editable-equipment-row {{ 'is-equipped' if item['equipped'] }}">
+          <form method="post"
+                action="{{ url_for('characters.equipment_edit',
+                  character_id=character['id'], equipment_id=item['id']) }}"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="notes" value="{{ item['notes'] }}">
+            <input type="hidden" name="icon_path" value="{{ item['icon_path'] }}">
+            <input name="name" maxlength="100" aria-label="Nom"
+                   value="{{ item['name'] }}" data-submit-on-change required>
+            <select name="item_type" aria-label="Type" data-submit-on-change>
+              {% for value, label in item_types.items() %}
+                <option value="{{ value }}" {{ "selected" if item["item_type"] == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <input name="effect" maxlength="300" aria-label="Effet"
+                   placeholder="Effet…" value="{{ item['effect'] }}" data-submit-on-change>
+            <input name="quantity" type="number" min="1" aria-label="Quantité"
+                   value="{{ item['quantity'] }}" data-submit-on-change required>
+            <label class="equipment-equipped">
+              <input name="equipped" type="checkbox" value="1"
+                     {{ "checked" if item["equipped"] }} data-submit-on-change>
+              <span class="sr-only">Équipé</span>
+            </label>
+            <div class="equipment-specific" data-item-fields>
+              <div data-fields-for="weapon spell">
+                <label>Dégâts
+                  <input name="damage_dice" maxlength="50" placeholder="2d6"
+                         value="{{ item['damage_dice'] }}" data-submit-on-change>
+                </label>
+                <label>Type
+                  <input name="damage_type" maxlength="50" placeholder="Glace, feu…"
+                         value="{{ item['damage_type'] }}" data-submit-on-change>
+                </label>
+              </div>
+              <div data-fields-for="spell">
+                <label>Utilisations
+                  <input name="uses" maxlength="80" placeholder="2 fois par Repos au Feu"
+                         value="{{ item['uses'] }}" data-submit-on-change>
+                </label>
+              </div>
+              <div data-fields-for="armor shield">
+                <label>Déf. physique
+                  <input name="physical_bonus" type="number"
+                         value="{{ item['physical_bonus'] }}" data-submit-on-change>
+                </label>
+                <label>Déf. élémentaire
+                  <input name="elemental_bonus" type="number"
+                         value="{{ item['elemental_bonus'] }}" data-submit-on-change>
+                </label>
+                <label>Déf. spirituelle
+                  <input name="spiritual_bonus" type="number"
+                         value="{{ item['spiritual_bonus'] }}" data-submit-on-change>
+                </label>
+              </div>
+            </div>
+          </form>
+          <form method="post"
+                action="{{ url_for('characters.equipment_delete',
+                  character_id=character['id'], equipment_id=item['id']) }}"
+                data-confirm="Supprimer {{ item['name'] }} ?"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="equipment-delete" type="submit" aria-label="Supprimer">×</button>
+          </form>
+        </div>
+      {% endfor %}
+      <form class="editable-equipment-row is-new"
+            method="post"
+            action="{{ url_for('characters.equipment_create', character_id=character['id']) }}"
+            data-async-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="notes" value="">
+        <input name="name" maxlength="100" placeholder="Nouvel objet…" required>
+        <select name="item_type" aria-label="Type">
+          {% for value, label in item_types.items() %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <input name="effect" maxlength="300" placeholder="Effet…" aria-label="Effet">
+        <input name="quantity" type="number" min="1" value="1" aria-label="Quantité" required>
+        <input type="hidden" name="equipped" value="0">
+        <button type="submit">Ajouter</button>
+        <div class="equipment-specific" data-item-fields>
+          <div data-fields-for="weapon spell">
+            <label>Dégâts
+              <input name="damage_dice" maxlength="50" placeholder="2d6">
+            </label>
+            <label>Type
+              <input name="damage_type" maxlength="50" placeholder="Glace, feu…">
+            </label>
+          </div>
+          <div data-fields-for="spell">
+            <label>Utilisations
+              <input name="uses" maxlength="80" placeholder="2 fois par Repos au Feu">
+            </label>
+          </div>
+          <div data-fields-for="armor shield">
+            <label>Déf. physique<input name="physical_bonus" type="number" value="0"></label>
+            <label>Déf. élémentaire<input name="elemental_bonus" type="number" value="0"></label>
+            <label>Déf. spirituelle<input name="spiritual_bonus" type="number" value="0"></label>
+          </div>
+        </div>
+      </form>
+    </div>
+    </div>
+  </section>
+  {% endif %}
+</article>
+{% endblock %}

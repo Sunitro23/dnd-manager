@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Équipement de {{ character["name"] }} · Gestionnaire JDR{% endblock %}
+{% block content %}
+<section class="inventory-page">
+  <header class="inventory-header">
+    <div>
+      <a href="{{ url_for('main.character_detail', character_id=character['id']) }}">← Fiche</a>
+      <p class="eyebrow">{{ character["name"] }}</p>
+      <h1>Équipement</h1>
+    </div>
+    <span>{{ equipment|length }} objet{{ "s" if equipment|length != 1 }}</span>
+  </header>
+
+  {% set type_labels = {
+    "weapon": "Arme", "armor": "Armure", "shield": "Bouclier",
+    "accessory": "Accessoire", "tool": "Outil", "consumable": "Consommable",
+    "spell": "Sort", "quest": "Quête", "other": "Autre"
+  } %}
+  {% set type_icons = {
+    "weapon": "weapon.png", "armor": "armor.png", "shield": "shield.png",
+    "accessory": "ring.png", "tool": "box.png", "consumable": "fire.png",
+    "spell": "spell.png", "quest": "souls_2.png", "other": "souls.png"
+  } %}
+
+  <form class="quick-item" data-item-fields
+        method="post"
+        action="{{ url_for('characters.equipment_create', character_id=character['id']) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="return_to" value="equipment">
+    <input type="hidden" name="physical_bonus" value="0">
+    <input type="hidden" name="elemental_bonus" value="0">
+    <input type="hidden" name="spiritual_bonus" value="0">
+    <input type="hidden" name="damage_dice" value="">
+    <input type="hidden" name="damage_type" value="">
+    <input type="hidden" name="uses" value="">
+    <input type="hidden" name="notes" value="">
+    <input type="hidden" name="equipped" value="0">
+    <input name="name" maxlength="100" placeholder="Nom de l’objet" required>
+    <select name="item_type" aria-label="Type">
+      {% for value in item_types %}
+        <option value="{{ value }}">{{ type_labels[value] }}</option>
+      {% endfor %}
+    </select>
+    <input name="effect" maxlength="300" placeholder="Effet rapide…">
+    <span data-fields-for="consumable quest" hidden>
+      <input name="quantity" type="number" min="1" value="1"
+             aria-label="Quantité" required>
+    </span>
+    <button type="submit">Ajouter</button>
+  </form>
+
+  {% if equipment %}
+    <div class="souls-inventory">
+      {% for item in equipment %}
+        <article class="souls-item {{ 'is-equipped' if item['equipped'] }}" tabindex="0">
+          <img src="{{ url_for('static', filename='icons/items/' ~ type_icons[item['item_type']]) }}"
+               alt="" aria-hidden="true">
+          <div class="souls-item-name">
+            <strong>{{ item["name"] }}</strong>
+            <small>{{ type_labels[item["item_type"]] }}</small>
+          </div>
+          <span class="souls-item-effect">{{ item["effect"] or "Aucun effet renseigné" }}</span>
+          {% if item["item_type"] in ("consumable", "quest") %}
+            <span>×{{ item["quantity"] }}</span>
+          {% endif %}
+          {% if item["equipped"] %}<b class="equipped-mark">Équipé</b>{% endif %}
+          <a href="{{ url_for('characters.equipment_edit',
+                    character_id=character['id'], equipment_id=item['id'],
+                    return_to='equipment') }}">Modifier</a>
+          <div class="souls-item-tooltip" role="tooltip">
+            <strong>{{ item["name"] }}</strong>
+            {% if item["damage_dice"] %}
+              <p>{{ item["damage_dice"] }} dégâts {{ item["damage_type"] }}</p>
+            {% endif %}
+            {% if item["physical_bonus"] or item["elemental_bonus"] or item["spiritual_bonus"] %}
+              <p>Défenses :
+                {{ "%+d"|format(item["physical_bonus"]) }} physique ·
+                {{ "%+d"|format(item["elemental_bonus"]) }} élémentaire ·
+                {{ "%+d"|format(item["spiritual_bonus"]) }} spirituelle
+              </p>
+            {% endif %}
+            {% if item["uses"] %}<p>{{ item["uses"] }}</p>{% endif %}
+            {% if item["effect"] %}<p>{{ item["effect"] }}</p>{% endif %}
+            {% if item["notes"] %}<p>{{ item["notes"] }}</p>{% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="inventory-empty">
+      <strong>Inventaire vide</strong>
+      <p>Ajoute ton premier objet avec la ligne ci-dessus.</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

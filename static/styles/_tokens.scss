@@ -1,0 +1,32 @@
+$physical-color: #e48772;
+$elemental-color: #6fc7f0;
+$spiritual-color: #c4a0eb;
+
+$combat-palettes: (
+  physical: ($physical-color, #8d4f42, #190d0a),
+  elemental: ($elemental-color, #315f7c, #09141c),
+  spiritual: ($spiritual-color, #684f83, #130d19)
+);
+
+$stat-colors: (
+  force: $physical-color,
+  dexterity: #80ca91,
+  constitution: #d9a761,
+  intelligence: $elemental-color,
+  wisdom: $spiritual-color,
+  charisma: #e69cbe
+);
+
+$surface-deep: #070805;
+$surface-panel: #080906;
+$surface-control: #0b0c09;
+$line-subtle: #332e20;
+
+$mobile-breakpoint: 760px;
+$sheet-max-width: 980px;
+$inventory-panel-height: 500px;
+$hp-menu-width: 320px;
+
+$font-xs: 0.62rem;
+$font-sm: 0.68rem;
+$font-md: 0.75rem;

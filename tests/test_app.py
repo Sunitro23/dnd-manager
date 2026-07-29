@@ -1,0 +1,1271 @@
+import io
+import json
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from werkzeug.security import generate_password_hash
+
+from app import create_app
+from database import init_db
+
+
+class ApplicationTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        database_path = Path(self.temporary_directory.name) / "test.sqlite3"
+        self.app = create_app(
+            {
+                "TESTING": True,
+                "SECRET_KEY": "test-secret",
+                "GM_PASSWORD_HASH": generate_password_hash("dragon"),
+                "DATABASE_PATH": str(database_path),
+                "PORTRAIT_PATH": str(Path(self.temporary_directory.name) / "portraits"),
+            }
+        )
+        with self.app.app_context():
+            init_db()
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def csrf_token(self):
+        self.client.get("/mj/connexion")
+        with self.client.session_transaction() as session:
+            return session["csrf_token"]
+
+    def login(self):
+        return self.client.post(
+            "/mj/connexion",
+            data={"password": "dragon", "csrf_token": self.csrf_token()},
+            follow_redirects=True,
+        )
+
+    def create_catalogues(self):
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            class_id = database.execute(
+                """
+                INSERT INTO character_class
+                    (stable_key, name, description, hit_die)
+                VALUES ('gardien', 'Gardien', '', 10)
+                """
+            ).lastrowid
+            species_id = database.execute(
+                """
+                INSERT INTO species (name, description, traits, size, speed)
+                VALUES (
+                    'Humain',
+                    'Une espèce polyvalente.',
+                    'Débrouillardise, compétence supplémentaire, polyvalence.',
+                    'Moyenne',
+                    30
+                )
+                """
+            ).lastrowid
+            database.commit()
+            return class_id, species_id
+
+    def character_form(self, class_id, species_id, **overrides):
+        values = {
+            "csrf_token": self.csrf_token(),
+            "name": "Aldren",
+            "owner_name": "Lise",
+            "class_id": str(class_id),
+            "species_id": str(species_id),
+            "strength": "15",
+            "dexterity": "10",
+            "constitution": "15",
+            "intelligence": "10",
+            "wisdom": "13",
+            "charisma": "8",
+            "description": "Protecteur du groupe",
+            "personal_info": "Toujours calme",
+        }
+        values.update(overrides)
+        return values
+
+    def create_public_character(self, **overrides):
+        class_id, species_id = self.create_catalogues()
+        self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(class_id, species_id, **overrides),
+        )
+        with self.app.app_context():
+            from database import get_db
+
+            return get_db().execute(
+                "SELECT id FROM character ORDER BY id DESC LIMIT 1"
+            ).fetchone()["id"]
+
+    def admin_character_form(self, **overrides):
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                """
+                SELECT species_id, racial_path_id
+                FROM character
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        values = {
+            "csrf_token": self.csrf_token(),
+            "name": "Aldren",
+            "owner_name": "Lise",
+            "character_type": "player",
+            "visibility": "campaign",
+            "level": "1",
+            "species_id": str(character["species_id"]),
+            "racial_path_id": (
+                str(character["racial_path_id"]) if character["racial_path_id"] else ""
+            ),
+            "strength": "15",
+            "dexterity": "10",
+            "constitution": "15",
+            "intelligence": "10",
+            "wisdom": "13",
+            "charisma": "8",
+        }
+        values.update(overrides)
+        return values
+
+    def test_public_campaign_is_available(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Choisir un personnage", response.get_data(as_text=True))
+
+    def test_public_paths_catalog_shows_two_paths_per_class_and_race(self):
+        response = self.client.get("/voies")
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Les deux voies de chaque classe", page)
+        self.assertIn("Rempart", page)
+        self.assertIn("Berserker", page)
+        self.assertIn("Les deux voies de chaque race", page)
+        self.assertIn("Dieu solaire", page)
+        self.assertIn("Dieu occulte", page)
+        self.assertEqual(page.count("Voie de classe</p>"), 14)
+        self.assertEqual(page.count("Voie raciale</p>"), 28)
+
+    def test_gm_dashboard_requires_login(self):
+        response = self.client.get("/mj")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/mj/connexion", response.headers["Location"])
+
+    def test_removed_player_and_journal_sections_do_not_exist(self):
+        self.login()
+        for path in ("/mj/joueurs", "/mj/journal"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
+
+    def test_gm_can_login(self):
+        response = self.login()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Vue MJ", response.get_data(as_text=True))
+
+    def test_catalogue_administration_routes_do_not_exist(self):
+        self.login()
+        for path in (
+            "/mj/classes",
+            "/mj/classes/nouvelle",
+            "/mj/classes/1/modifier",
+            "/mj/especes",
+            "/mj/especes/nouvelle",
+            "/mj/especes/1/modifier",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
+
+    def test_public_visitor_can_create_visible_player_character(self):
+        class_id, species_id = self.create_catalogues()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_id,
+                species_id,
+                character_type="enemy",
+                visibility="gm",
+                level="20",
+            ),
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Aldren", page)
+        self.assertIn("<dt>Classe</dt><dd>Gardien</dd>", page)
+        self.assertIn("<dt>Niveau</dt><dd>1</dd>", page)
+        self.assertIn(">Level up</button>", page)
+        self.assertIn("Monter Aldren au niveau 2 ?", page)
+
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                """
+                SELECT character_type, visibility, level, max_hp
+                FROM character WHERE name = 'Aldren'
+                """
+            ).fetchone()
+            self.assertEqual(character["character_type"], "player")
+            self.assertEqual(character["visibility"], "campaign")
+            self.assertEqual(character["level"], 1)
+            self.assertEqual(character["max_hp"], 12)
+
+    def test_public_creation_requires_exactly_27_points(self):
+        class_id, species_id = self.create_catalogues()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(class_id, species_id, strength="14"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("exactement 27 points", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            from database import get_db
+
+            count = get_db().execute("SELECT COUNT(*) FROM character").fetchone()[0]
+            self.assertEqual(count, 0)
+
+    def test_gm_can_create_secret_enemy_hidden_from_public(self):
+        class_id, species_id = self.create_catalogues()
+        self.login()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_id,
+                species_id,
+                name="Dragon secret",
+                owner_name="",
+                character_type="enemy",
+                visibility="gm",
+                level="5",
+            ),
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Dragon secret", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            from database import get_db
+
+            character_id = get_db().execute(
+                "SELECT id FROM character WHERE name = 'Dragon secret'"
+            ).fetchone()["id"]
+
+        with self.client.session_transaction() as session:
+            session.clear()
+
+        detail = self.client.get(f"/personnages/{character_id}")
+        campaign = self.client.get("/")
+        self.assertEqual(detail.status_code, 404)
+        self.assertNotIn("Dragon secret", campaign.get_data(as_text=True))
+
+    def test_public_visitor_can_change_hp_without_log(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "damage",
+                "amount": "5",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("12 → 7", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            hp = database.execute(
+                "SELECT current_hp FROM character WHERE id = ?", (character_id,)
+            ).fetchone()["current_hp"]
+            self.assertEqual(hp, 7)
+            tables = {
+                row[0]
+                for row in database.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            self.assertNotIn("change_log", tables)
+
+    def test_hp_can_be_saved_asynchronously(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "set",
+                "amount": "6",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["current_hp"], 6)
+        self.assertTrue(response.json["ok"])
+
+    def test_damage_uses_the_selected_defense(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "damage",
+                "amount": "5",
+                "damage_type": "elemental",
+                "physical_defense": "1",
+                "elemental_defense": "2",
+                "spiritual_defense": "3",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["current_hp"], 9)
+
+    def test_estus_is_single_use_and_rest_restores_it(self):
+        character_id = self.create_public_character()
+        token = self.csrf_token()
+        self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={"csrf_token": token, "action": "damage", "amount": "5"},
+        )
+        estus = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={"csrf_token": token, "action": "estus"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(estus.status_code, 200)
+        self.assertEqual(estus.json["current_hp"], estus.json["max_hp"])
+        self.assertEqual(estus.json["estus_available"], 0)
+
+        unavailable = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={"csrf_token": token, "action": "estus"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(unavailable.status_code, 400)
+
+        rest = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={"csrf_token": token, "action": "rest"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(rest.status_code, 200)
+        self.assertEqual(rest.json["estus_available"], 1)
+
+    def test_limited_path_action_spends_a_charge_until_rest(self):
+        character_id = self.create_public_character()
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            character = database.execute(
+                "SELECT class_id FROM character WHERE id = ?", (character_id,)
+            ).fetchone()
+            ranks = [
+                {
+                    "rank": 1,
+                    "name": "Épreuve",
+                    "active": {
+                        "timing": "Action",
+                        "uses": "2 fois par Repos au Feu",
+                        "effect": "Effet de test.",
+                    },
+                    "passive": None,
+                }
+            ]
+            ranks.extend(
+                {
+                    "rank": rank,
+                    "name": f"Rang {rank}",
+                    "active": None,
+                    "passive": None,
+                }
+                for rank in range(2, 6)
+            )
+            path_id = database.execute(
+                """
+                INSERT INTO class_path
+                    (class_id, name, ranks_json, configured)
+                VALUES (?, 'Voie de test', ?, 1)
+                """,
+                (character["class_id"], json.dumps(ranks)),
+            ).lastrowid
+            database.execute(
+                """
+                INSERT INTO character_rank
+                    (character_id, path_type, path_id, rank)
+                VALUES (?, 'class', ?, 1)
+                """,
+                (character_id, path_id),
+            )
+            database.commit()
+
+        token = self.csrf_token()
+        page = self.client.get(f"/personnages/{character_id}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("2/2 restantes", page.get_data(as_text=True))
+        action_data = {
+            "csrf_token": token,
+            "path_type": "class",
+            "path_id": str(path_id),
+            "rank": "1",
+        }
+        first = self.client.post(
+            f"/personnages/{character_id}/competences/utiliser",
+            data=action_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        second = self.client.post(
+            f"/personnages/{character_id}/competences/utiliser",
+            data=action_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        exhausted = self.client.post(
+            f"/personnages/{character_id}/competences/utiliser",
+            data=action_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(first.json["remaining"], 1)
+        self.assertEqual(second.json["remaining"], 0)
+        self.assertEqual(exhausted.status_code, 400)
+
+        self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={"csrf_token": token, "action": "rest"},
+        )
+        restored = self.client.post(
+            f"/personnages/{character_id}/competences/utiliser",
+            data=action_data,
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(restored.json["remaining"], 1)
+
+    def test_public_character_accepts_a_local_portrait(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/portrait",
+            data={
+                "csrf_token": self.csrf_token(),
+                "portrait": (
+                    io.BytesIO(b"\x89PNG\r\n\x1a\nportrait"),
+                    "portrait.png",
+                ),
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["ok"])
+        image = self.client.get(response.json["image_url"])
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image.data, b"\x89PNG\r\n\x1a\nportrait")
+        image.close()
+
+    def test_hp_is_clamped_between_zero_and_maximum(self):
+        character_id = self.create_public_character()
+        self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "damage",
+                "amount": "99",
+            },
+        )
+        self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "heal",
+                "amount": "99",
+            },
+        )
+        with self.app.app_context():
+            from database import get_db
+
+            hp = get_db().execute(
+                "SELECT current_hp FROM character WHERE id = ?", (character_id,)
+            ).fetchone()["current_hp"]
+            self.assertEqual(hp, 12)
+
+    def test_public_visitor_can_edit_texts(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/textes",
+            data={
+                "csrf_token": self.csrf_token(),
+                "description": "Nouvelle description",
+                "personal_info": "Nouvelles informations",
+            },
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Nouvelle description", page)
+        self.assertIn("Nouvelles informations", page)
+
+    def test_equipped_item_updates_displayed_defenses(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/nouveau",
+            data={
+                "csrf_token": self.csrf_token(),
+                "name": "Armure runique",
+                "item_type": "armor",
+                "quantity": "1",
+                "equipped": "1",
+                "physical_bonus": "2",
+                "elemental_bonus": "1",
+                "spiritual_bonus": "-1",
+                "notes": "Une vieille armure",
+            },
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        # CON 15 donne +2, auquel l'armure ajoute +2.
+        self.assertIn("<strong>+4</strong>", page)
+        inventory = self.client.get(
+            f"/personnages/{character_id}/equipement"
+        ).get_data(as_text=True)
+        self.assertIn("Armure runique", inventory)
+        self.assertIn("+2 physique", inventory)
+
+    def test_equipped_accessory_updates_ability_and_derived_values(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/nouveau",
+            data={
+                "csrf_token": self.csrf_token(),
+                "name": "Anneau du sage",
+                "item_type": "accessory",
+                "quantity": "1",
+                "equipped": "1",
+                "physical_bonus": "0",
+                "elemental_bonus": "0",
+                "spiritual_bonus": "0",
+                "stat": "INT",
+                "stat_bonus": "2",
+            },
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("10 + 2 accessoires", page)
+        # Une Intelligence effective de 12 donne +1 en Défense élémentaire.
+        self.assertIn("<strong>+1</strong>", page)
+
+    def test_constitution_accessory_recalculates_maximum_hp(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/nouveau",
+            data={
+                "csrf_token": self.csrf_token(),
+                "name": "Anneau de vigueur",
+                "item_type": "accessory",
+                "quantity": "1",
+                "equipped": "1",
+                "physical_bonus": "0",
+                "elemental_bonus": "0",
+                "spiritual_bonus": "0",
+                "stat": "CON",
+                "stat_bonus": "2",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                "SELECT current_hp, max_hp FROM character WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            self.assertEqual(character["max_hp"], 13)
+            self.assertEqual(character["current_hp"], 13)
+
+    def test_hand_equipment_uses_right_then_left_slot(self):
+        character_id = self.create_public_character()
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            item_ids = []
+            for name, item_type in (
+                ("Épée", "weapon"),
+                ("Bouclier", "shield"),
+                ("Catalyseur", "tool"),
+            ):
+                item_ids.append(
+                    database.execute(
+                        """
+                        INSERT INTO equipment (character_id, name, item_type)
+                        VALUES (?, ?, ?)
+                        """,
+                        (character_id, name, item_type),
+                    ).lastrowid
+                )
+            database.commit()
+
+        token = self.csrf_token()
+        for item_id in item_ids[:2]:
+            response = self.client.post(
+                f"/personnages/{character_id}/equipement/{item_id}/equiper",
+                data={"csrf_token": token},
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
+            self.assertEqual(response.status_code, 200)
+        full = self.client.post(
+            f"/personnages/{character_id}/equipement/{item_ids[2]}/equiper",
+            data={"csrf_token": token},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(full.status_code, 400)
+
+        with self.app.app_context():
+            from database import get_db
+
+            slots = {
+                row["name"]: row["slot"]
+                for row in get_db().execute(
+                    """
+                    SELECT name, slot FROM equipment
+                    WHERE id IN (?, ?, ?)
+                    """,
+                    item_ids,
+                ).fetchall()
+            }
+            self.assertEqual(slots["Épée"], "right_hand")
+            self.assertEqual(slots["Bouclier"], "left_hand")
+            self.assertEqual(slots["Catalyseur"], "")
+
+    def test_quick_item_creation_opens_an_editable_detail(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/rapide",
+            data={"csrf_token": self.csrf_token(), "item_type": "weapon"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["refresh_sheet"])
+        equipment_id = response.json["selected_item_id"]
+
+        page = self.client.get(f"/personnages/{character_id}").get_data(as_text=True)
+        self.assertIn(f'data-inventory-detail="{equipment_id}"', page)
+        self.assertIn('class="inventory-detail-name"', page)
+        self.assertIn("Nouvelle arme", page)
+
+    def test_item_icon_library_is_filtered_and_paginated(self):
+        response = self.client.get("/personnages/bibliotheque-icones/spell")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["ok"])
+        self.assertLessEqual(len(response.json["icons"]), 200)
+        self.assertTrue(response.json["icons"])
+        self.assertTrue(
+            all(icon["path"].startswith("04_spells/") for icon in response.json["icons"])
+        )
+        icon_response = self.client.get(response.json["icons"][0]["url"])
+        self.assertEqual(icon_response.status_code, 200)
+        icon_response.close()
+
+    def test_tool_icon_library_includes_catalysts(self):
+        response = self.client.get("/personnages/bibliotheque-icones/tool")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["icons"])
+        self.assertTrue(
+            all(
+                icon["path"].startswith("07_catalysts/")
+                for icon in response.json["icons"]
+            )
+        )
+
+    def test_player_can_choose_and_save_an_item_icon(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/rapide",
+            data={"csrf_token": self.csrf_token(), "item_type": "spell"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        equipment_id = response.json["selected_item_id"]
+        icon_path = "04_spells/MENU_Knowledge_04100.PNG"
+
+        response = self.client.post(
+            f"/personnages/{character_id}/equipement/{equipment_id}/modifier",
+            data={
+                "csrf_token": self.csrf_token(),
+                "name": "Flèche d’âme",
+                "item_type": "spell",
+                "quantity": "1",
+                "equipped": "0",
+                "physical_bonus": "0",
+                "elemental_bonus": "0",
+                "spiritual_bonus": "0",
+                "damage_dice": "2d6",
+                "damage_type": "elemental",
+                "uses": "3 fois par repos",
+                "stat": "",
+                "stat_bonus": "0",
+                "icon_path": icon_path,
+                "effect": "Inflige des dégâts élémentaires.",
+                "notes": "",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            from database import get_db
+
+            saved_icon = get_db().execute(
+                "SELECT icon_path FROM equipment WHERE id = ?", (equipment_id,)
+            ).fetchone()["icon_path"]
+        self.assertEqual(saved_icon, icon_path)
+        page = self.client.get(f"/personnages/{character_id}").get_data(as_text=True)
+        self.assertIn("data-icon-picker-toggle", page)
+        self.assertNotIn("Choisir une icône", page)
+        self.assertIn("MENU_Knowledge_04100.PNG", page)
+        self.assertNotIn(">Notes<", page)
+
+    def test_item_icon_route_rejects_paths_outside_library(self):
+        response = self.client.get(
+            "/personnages/icones/fichier/../../schema.sql"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_inventory_interface_assets_are_served_safely(self):
+        for path in (
+            "menu-dish.png",
+            "sprite-1-1.png",
+            "right_hand.png",
+            "left_hand.png",
+            "armor.png",
+            "ring.png",
+            "stamp.png",
+        ):
+            response = self.client.get(f"/personnages/interface/{path}")
+            self.assertEqual(response.status_code, 200)
+            response.close()
+
+        self.assertEqual(
+            self.client.get("/personnages/interface/../schema.sql").status_code,
+            404,
+        )
+
+    def test_public_cannot_modify_secret_character(self):
+        class_id, species_id = self.create_catalogues()
+        self.login()
+        self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_id,
+                species_id,
+                name="Secret à protéger",
+                owner_name="",
+                character_type="enemy",
+                visibility="gm",
+            ),
+        )
+        with self.app.app_context():
+            from database import get_db
+
+            character_id = get_db().execute(
+                "SELECT id FROM character WHERE name = 'Secret à protéger'"
+            ).fetchone()["id"]
+        with self.client.session_transaction() as session:
+            session.clear()
+
+        response = self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "damage",
+                "amount": "5",
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_character_administration_requires_gm(self):
+        character_id = self.create_public_character()
+        response = self.client.get(f"/mj/personnages/{character_id}/modifier")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/mj/connexion", response.headers["Location"])
+
+    def test_gm_level_up_recalculates_full_hp_to_new_maximum(self):
+        character_id = self.create_public_character()
+        self.login()
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(level="2"),
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("20", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                "SELECT level, current_hp, max_hp FROM character WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            self.assertEqual(character["level"], 2)
+            self.assertEqual(character["max_hp"], 20)
+            self.assertEqual(character["current_hp"], 20)
+
+    def test_gm_level_up_preserves_current_hp_when_character_is_wounded(self):
+        character_id = self.create_public_character()
+        self.client.post(
+            f"/personnages/{character_id}/pv",
+            data={
+                "csrf_token": self.csrf_token(),
+                "action": "damage",
+                "amount": "5",
+            },
+        )
+        self.login()
+        self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(level="2"),
+        )
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                "SELECT current_hp, max_hp FROM character WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            self.assertEqual(character["current_hp"], 7)
+            self.assertEqual(character["max_hp"], 20)
+
+    def test_gm_cannot_lower_level_or_break_point_buy(self):
+        character_id = self.create_public_character()
+        self.login()
+        self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(level="2"),
+        )
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(level="1", strength="14"),
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            "niveau ne peut pas diminuer" in page
+            or "exactement 27 points" in page
+        )
+
+        with self.app.app_context():
+            from database import get_db
+
+            character = get_db().execute(
+                "SELECT level, strength FROM character WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            self.assertEqual(character["level"], 2)
+            self.assertEqual(character["strength"], 15)
+
+    def test_gm_can_hide_character(self):
+        character_id = self.create_public_character()
+        self.login()
+        self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(visibility="gm"),
+        )
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertEqual(self.client.get(f"/personnages/{character_id}").status_code, 404)
+
+    def test_gm_can_duplicate_character_with_equipment(self):
+        character_id = self.create_public_character()
+        self.client.post(
+            f"/personnages/{character_id}/equipement/nouveau",
+            data={
+                "csrf_token": self.csrf_token(),
+                "name": "Bouclier",
+                "item_type": "shield",
+                "quantity": "1",
+                "equipped": "1",
+                "physical_bonus": "2",
+                "elemental_bonus": "0",
+                "spiritual_bonus": "0",
+                "notes": "",
+            },
+        )
+        self.login()
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/dupliquer",
+            data={"csrf_token": self.csrf_token()},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Aldren — copie", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            duplicate = database.execute(
+                "SELECT id, owner_id FROM character WHERE name = 'Aldren — copie'"
+            ).fetchone()
+            self.assertIsNone(duplicate["owner_id"])
+            equipment_count = database.execute(
+                "SELECT COUNT(*) FROM equipment WHERE character_id = ?",
+                (duplicate["id"],),
+            ).fetchone()[0]
+            self.assertEqual(equipment_count, 1)
+
+    def test_public_cannot_duplicate_character(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/dupliquer",
+            data={"csrf_token": self.csrf_token()},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/mj/connexion", response.headers["Location"])
+
+    def test_security_headers_are_added(self):
+        response = self.client.get("/")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+
+    def test_gm_login_is_rate_limited_after_five_failures(self):
+        for _ in range(5):
+            response = self.client.post(
+                "/mj/connexion",
+                data={
+                    "password": "incorrect",
+                    "csrf_token": self.csrf_token(),
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            "/mj/connexion",
+            data={"password": "dragon", "csrf_token": self.csrf_token()},
+        )
+        self.assertEqual(response.status_code, 429)
+
+    def test_stale_gm_character_form_is_rejected(self):
+        character_id = self.create_public_character()
+        self.login()
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            database.execute(
+                "UPDATE character SET version = 2 WHERE id = ?", (character_id,)
+            )
+            database.commit()
+
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/modifier",
+            data=self.admin_character_form(version="1", level="2"),
+        )
+        self.assertEqual(response.status_code, 409)
+
+    def test_gm_dashboard_filters_type_visibility_and_owner(self):
+        visible_id = self.create_public_character(name="Héros visible")
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            source = database.execute(
+                "SELECT * FROM character WHERE id = ?", (visible_id,)
+            ).fetchone()
+            database.execute(
+                """
+                INSERT INTO character
+                    (
+                        class_id, species_id, name, character_type, visibility,
+                        level, strength, dexterity, constitution, intelligence,
+                        wisdom, charisma, current_hp, max_hp
+                    )
+                VALUES (?, ?, 'Ennemi secret', 'enemy', 'gm', 1,
+                        15, 10, 15, 10, 13, 8, 12, 12)
+                """,
+                (source["class_id"], source["species_id"]),
+            )
+            database.commit()
+
+        self.login()
+        response = self.client.get(
+            "/mj?type=enemy&visibility=gm&owner=none"
+        )
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Ennemi secret", page)
+        self.assertNotIn("Héros visible", page)
+
+    def test_character_sheet_displays_species_capabilities(self):
+        character_id = self.create_public_character()
+        response = self.client.get(f"/personnages/{character_id}")
+        page = response.get_data(as_text=True)
+        self.assertIn("Une espèce polyvalente.", page)
+        self.assertIn("Débrouillardise, compétence supplémentaire, polyvalence.", page)
+        self.assertIn("Moyenne", page)
+        self.assertIn("30", page)
+
+    def test_species_config_bonuses_are_added_to_defenses(self):
+        class_id, _ = self.create_catalogues()
+        with self.app.app_context():
+            from database import get_db
+
+            racial_path = get_db().execute(
+                """
+                SELECT rp.id, rp.species_id
+                FROM racial_path rp
+                WHERE rp.name = 'Dieu solaire'
+                """
+            ).fetchone()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_id,
+                racial_path["species_id"],
+                racial_path_id=str(racial_path["id"]),
+            ),
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertIn("Défenses raciales", page)
+        self.assertIn("defense-physical", page)
+        self.assertIn("<strong>+4</strong>", page)
+        self.assertIn("defense-elemental", page)
+
+    def test_character_selects_one_bonus_but_sees_all_available_paths(self):
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            class_path = database.execute(
+                """
+                SELECT cp.id AS path_id, cp.class_id
+                FROM class_path cp
+                WHERE cp.name = 'Rempart'
+                """
+            ).fetchone()
+            racial_path = database.execute(
+                """
+                SELECT rp.id AS path_id, rp.species_id
+                FROM racial_path rp
+                WHERE rp.name = 'Dieu solaire'
+                """
+            ).fetchone()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_path["class_id"],
+                racial_path["species_id"],
+                racial_path_id=str(racial_path["path_id"]),
+            ),
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertIn("Rempart", page)
+        self.assertIn("Berserker", page)
+        self.assertIn("Dieu solaire", page)
+        self.assertIn("Dieu occulte", page)
+        self.assertIn("Débloque un rang 1 racial.", page)
+        self.assertIn("Forteresse vivante", page)
+        self.assertIn("Bonus racial actif", page)
+
+        character_url = response.request.path
+        response = self.client.post(
+            f"{character_url}/bonus-racial",
+            data={
+                "csrf_token": self.csrf_token(),
+                "racial_path_id": str(racial_path["path_id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "Débloque d’abord le rang 1 de cette voie.",
+            response.get_data(as_text=True),
+        )
+        response = self.client.post(
+            f"{character_url}/rangs",
+            data={
+                "csrf_token": self.csrf_token(),
+                "path_type": "racial",
+                "path_id": str(racial_path["path_id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "Dieu solaire · +2 CHA, +1 SAG",
+            response.get_data(as_text=True),
+        )
+        response = self.client.post(
+            f"{character_url}/bonus-racial",
+            data={
+                "csrf_token": self.csrf_token(),
+                "racial_path_id": str(racial_path["path_id"]),
+            },
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertIn("Bonus de Dieu solaire appliqué.", page)
+        self.assertIn("8 + 2 voie raciale", page)
+
+    def test_levels_grant_path_points_and_permanent_rank_bonuses(self):
+        self.login()
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            class_path = database.execute(
+                "SELECT id, class_id FROM class_path WHERE name = 'Rempart'"
+            ).fetchone()
+            racial_path = database.execute(
+                "SELECT id, species_id FROM racial_path WHERE name = 'Dieu solaire'"
+            ).fetchone()
+            other_racial_path = database.execute(
+                "SELECT id FROM racial_path WHERE name = 'Dieu occulte'"
+            ).fetchone()
+        response = self.client.post(
+            "/personnages/nouveau",
+            data=self.character_form(
+                class_path["class_id"],
+                racial_path["species_id"],
+                class_path_id=str(class_path["id"]),
+                racial_path_id=str(racial_path["id"]),
+                level="3",
+                character_type="player",
+                visibility="campaign",
+            ),
+            follow_redirects=True,
+        )
+        character_url = response.request.path
+        self.assertIn("points disponibles", response.get_data(as_text=True))
+
+        for expected_points in (2, 1):
+            response = self.client.post(
+                f"{character_url}/rangs",
+                data={
+                    "csrf_token": self.csrf_token(),
+                    "path_type": "racial",
+                    "path_id": str(racial_path["id"]),
+                },
+                follow_redirects=True,
+            )
+            self.assertIn(
+                f"<strong>{expected_points}</strong>",
+                response.get_data(as_text=True),
+            )
+
+        page = response.get_data(as_text=True)
+        self.assertIn("defense-elemental", page)
+        self.assertIn("<strong>+4</strong>", page)
+        response = self.client.post(
+            f"{character_url}/rangs",
+            data={
+                "csrf_token": self.csrf_token(),
+                "path_type": "racial",
+                "path_id": str(other_racial_path["id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("<strong>0</strong>", response.get_data(as_text=True))
+        response = self.client.post(
+            f"{character_url}/rangs",
+            data={
+                "csrf_token": self.csrf_token(),
+                "path_type": "class",
+                "path_id": str(class_path["id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("Aucun point de voie disponible.", response.get_data(as_text=True))
+
+    def test_public_player_can_level_up_from_character_sheet(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/personnages/{character_id}/niveau",
+            data={"csrf_token": self.csrf_token()},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["message"], "Niveau 2 atteint : 1 point de voie gagné.")
+        page = self.client.get(f"/personnages/{character_id}").get_data(as_text=True)
+        self.assertIn("<dt>Niveau</dt><dd>2</dd>", page)
+        self.assertIn("<strong>2</strong>", page)
+
+    def test_archive_routes_do_not_exist(self):
+        character_id = self.create_public_character()
+        self.login()
+        paths = (
+            "/mj/classes/1/statut",
+            "/mj/especes/1/statut",
+            f"/mj/personnages/{character_id}/statut",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.post(
+                    path,
+                    data={"csrf_token": self.csrf_token()},
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_health_endpoint_checks_database(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"status": "ok"})
+
+    def test_public_list_stays_fast_with_realistic_volume(self):
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            database.executemany(
+                """
+                INSERT INTO character
+                    (
+                        name, character_type, visibility, current_hp, max_hp
+                    )
+                VALUES (?, 'npc', 'campaign', 10, 10)
+                """,
+                [(f"PNJ {index:03d}",) for index in range(500)],
+            )
+            database.commit()
+
+        started = time.perf_counter()
+        response = self.client.get("/")
+        elapsed = time.perf_counter() - started
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(elapsed, 2.0)
+
+    def test_secret_character_is_not_shown_publicly(self):
+        with self.app.app_context():
+            from database import get_db
+
+            database = get_db()
+            database.execute(
+                """
+                INSERT INTO character
+                    (name, character_type, visibility, current_hp, max_hp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                ("Dragon secret", "enemy", "gm", 100, 100),
+            )
+            database.commit()
+
+        response = self.client.get("/")
+        self.assertNotIn("Dragon secret", response.get_data(as_text=True))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,12 @@
+{
+  "customSyntax": "postcss-scss",
+  "rules": {
+    "block-no-empty": true,
+    "declaration-block-no-duplicate-properties": true,
+    "declaration-no-important": true,
+    "no-duplicate-selectors": true,
+    "selector-max-compound-selectors": 5,
+    "selector-max-id": 0,
+    "selector-max-specificity": "0,5,0"
+  }
+}

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}
+  {{ "Modifier" if equipment else "Nouvel" }} objet · Gestionnaire JDR
+{% endblock %}
+{% block content %}
+  <section class="form-panel">
+    <p class="eyebrow">Équipement</p>
+    <h1>{{ "Modifier l'objet" if equipment else "Nouvel objet" }}</h1>
+    <form method="post" data-item-fields>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="icon_path"
+             value="{{ request.form.get('icon_path', equipment['icon_path'] if equipment else '') }}">
+
+      <label for="name">Nom</label>
+      <input id="name" name="name" maxlength="100" required
+             value="{{ request.form.get('name', equipment['name'] if equipment else '') }}">
+
+      <div class="field-grid">
+        <div>
+          <label for="item_type">Type</label>
+          {% set selected_type = request.form.get(
+            'item_type', equipment['item_type'] if equipment else 'other'
+          ) %}
+          <select id="item_type" name="item_type">
+            {% set type_labels = {
+              "weapon": "Arme", "armor": "Armure", "shield": "Bouclier",
+              "accessory": "Accessoire", "tool": "Outil",
+              "consumable": "Consommable", "spell": "Sort",
+              "quest": "Quête", "other": "Autre"
+            } %}
+            {% for item_type in item_types %}
+              <option value="{{ item_type }}"
+                {% if selected_type == item_type %}selected{% endif %}>
+                {{ type_labels[item_type] }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div data-fields-for="consumable quest" hidden>
+          <label for="quantity">Quantité</label>
+          <input id="quantity" name="quantity" type="number" min="1" required
+                 value="{{ request.form.get('quantity', equipment['quantity'] if equipment else '1') }}">
+        </div>
+      </div>
+
+      <div class="field-grid field-grid-three">
+        <div>
+          <label for="damage_dice">Dés de dégâts</label>
+          <input id="damage_dice" name="damage_dice" maxlength="50"
+                 placeholder="Ex. 2d6"
+                 value="{{ request.form.get('damage_dice', equipment['damage_dice'] if equipment else '') }}">
+        </div>
+        <div>
+          <label for="damage_type">Type de dégâts</label>
+          {% set selected_damage = request.form.get(
+            'damage_type', equipment['damage_type'] if equipment else ''
+          ) %}
+          <select id="damage_type" name="damage_type">
+            {% for value, label in [
+              ('', 'Aucun'), ('physical', 'Physique'),
+              ('elemental', 'Élémentaire'), ('spiritual', 'Spirituel')
+            ] %}
+              <option value="{{ value }}" {{ "selected" if selected_damage == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="uses">Utilisations</label>
+          <input id="uses" name="uses" maxlength="80"
+                 placeholder="Ex. 2 fois par Repos au Feu"
+                 value="{{ request.form.get('uses', equipment['uses'] if equipment else '') }}">
+        </div>
+      </div>
+
+      <label class="checkbox-field">
+        <input name="equipped" type="checkbox" value="1"
+          {% if request.form.get('equipped') == '1' or
+                (not request.form and equipment and equipment['equipped']) %}checked{% endif %}>
+        <span>Objet équipé</span>
+      </label>
+
+      <div class="field-grid field-grid-three">
+        {% set bonuses = [
+          ('physical_bonus', 'Bonus physique'),
+          ('elemental_bonus', 'Bonus élémentaire'),
+          ('spiritual_bonus', 'Bonus spirituel')
+        ] %}
+        {% for field, label in bonuses %}
+          <div>
+            <label for="{{ field }}">{{ label }}</label>
+            <input id="{{ field }}" name="{{ field }}" type="number" required
+                   value="{{ request.form.get(field, equipment[field] if equipment else '0') }}">
+          </div>
+        {% endfor %}
+      </div>
+
+      <label for="effect">Effet résumé</label>
+      <input id="effect" name="effect" maxlength="300"
+             placeholder="Ex. Rend 15 PV, +1 FOR, résistance au feu"
+             value="{{ request.form.get('effect', equipment['effect'] if equipment else '') }}">
+
+      <div class="field-grid">
+        <div>
+          <label for="stat">Statistique de l’accessoire</label>
+          <select id="stat" name="stat">
+            {% set selected_stat = request.form.get('stat', equipment['stat'] if equipment else '') %}
+            {% for value, label in [
+              ('', 'Aucune'), ('FOR', 'Force'), ('DEX', 'Dextérité'),
+              ('CON', 'Constitution'), ('INT', 'Intelligence'),
+              ('SAG', 'Sagesse'), ('CHA', 'Charisme')
+            ] %}
+              <option value="{{ value }}" {{ "selected" if selected_stat == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="stat_bonus">Valeur du bonus</label>
+          <input id="stat_bonus" name="stat_bonus" type="number"
+                 value="{{ request.form.get('stat_bonus', equipment['stat_bonus'] if equipment else '0') }}">
+        </div>
+      </div>
+
+      <label for="notes">Effets</label>
+      <textarea id="notes" name="notes" maxlength="2000"
+                rows="7">{{ request.form.get('notes', equipment['notes'] if equipment else '') }}</textarea>
+
+      <div class="form-actions">
+        <button type="submit">Enregistrer</button>
+        <a class="button button-secondary"
+           href="{{ url_for(
+             'characters.equipment_index' if request.args.get('return_to') == 'equipment'
+             else 'main.character_detail',
+             character_id=character_id
+           ) }}">
+          Annuler
+        </a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

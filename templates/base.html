@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}Gestionnaire JDR{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Aller au contenu</a>
+    <header class="site-header">
+      <a class="brand icon-heading" href="{{ url_for('main.campaign') }}">
+        <img src="{{ url_for('static', filename='icons/brand/sword.png') }}"
+             alt="" aria-hidden="true">
+        Gestionnaire JDR
+      </a>
+      <nav aria-label="Navigation principale">
+        <a href="{{ url_for('main.paths_catalog') }}">Voies</a>
+        {% if is_gm() %}
+          <a href="{{ url_for('main.gm_dashboard') }}">Vue MJ</a>
+          <form action="{{ url_for('auth.logout') }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="link-button" type="submit">Déconnexion</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('auth.login') }}">Accès MJ</a>
+        {% endif %}
+      </nav>
+    </header>
+    <main id="main-content" class="container" tabindex="-1">
+      {% for category, message in get_flashed_messages(with_categories=true) %}
+        <p class="message message-{{ category }}">{{ message }}</p>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Accès MJ · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <section class="login-panel">
+    <p class="eyebrow">Zone privée</p>
+    <h1>Accès MJ</h1>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="password">Mot de passe</label>
+      <input id="password" name="password" type="password" required autofocus>
+      <button type="submit">Se connecter</button>
+    </form>
+  </section>
+{% endblock %}

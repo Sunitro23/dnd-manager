@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+    image: dnd-manager:latest
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env.docker
+        required: true
+    environment:
+      DATABASE_PATH: /data/dnd_manager.sqlite3
+      PORTRAIT_PATH: /data/portraits
+      PORT: "8000"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    volumes:
+      - dnd-manager-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  dnd-manager-data:
