@@ -31,11 +31,11 @@ Reporter le hash obtenu dans `GM_PASSWORD_HASH`, puis lancer le service :
 ```bash
 docker compose up -d
 docker compose ps
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8002/health
 ```
 
-L'application est accessible sur `http://127.0.0.1:8000`. Pour changer le port
-local, définir par exemple `APP_PORT=8080` avant `docker compose up`.
+L'application est accessible sur `http://127.0.0.1:8002`. Pour changer le port
+local, définir `APP_PORT` avant `docker compose up`.
 
 ## Publication HTTPS
 

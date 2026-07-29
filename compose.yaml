@@ -13,7 +13,7 @@ services:
       PORTRAIT_PATH: /data/portraits
       PORT: "8000"
     ports:
-      - "127.0.0.1:${APP_PORT:-8000}:8000"
+      - "127.0.0.1:${APP_PORT:-8002}:8000"
     volumes:
       - dnd-manager-data:/data
     read_only: true
