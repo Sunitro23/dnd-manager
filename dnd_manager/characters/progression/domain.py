@@ -1,7 +1,6 @@
-import re
-
-from dnd_manager.characters.common.health import adjusted_health as adjusted_health_value
-from dnd_manager.characters.common.health import maximum_hp
+from dnd_manager.characters.common.rules import adjusted_health as adjusted_health_value
+from dnd_manager.characters.common.rules import limited_uses
+from dnd_manager.characters.common.rules import maximum_hp
 from dnd_manager.characters.progression.contracts import (
     ActionResult,
     LevelResult,
@@ -71,11 +70,6 @@ def require_rank_number(rank):
 def require_unlocked_action(unlocked):
     if not unlocked:
         raise InvalidRequest("Cette compétence n’est pas débloquée.")
-
-
-def limited_uses(uses):
-    match = re.match(r"^(\d+)\s+(?:fois|charges)\b", uses, re.IGNORECASE)
-    return int(match.group(1)) if match else None
 
 
 def require_limited_action(limit):

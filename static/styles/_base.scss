@@ -642,18 +642,15 @@ button,
 }
 
 .rank-details,
-.compact-details,
 .catalog-group {
   margin-top: 0.35rem;
 }
 
-.compact-details + .compact-details,
 .catalog-group + .catalog-group {
   border-top: 1px solid var(--border);
 }
 
 .rank-details summary,
-.compact-details summary,
 .catalog-group > summary {
   padding: 0.5rem 0;
   cursor: pointer;
@@ -841,10 +838,6 @@ button,
 h1.icon-heading img {
   width: 1.15em;
   height: 1.15em;
-}
-
-.compact-details > summary.icon-heading {
-  display: flex;
 }
 
 .sr-only {

@@ -98,10 +98,6 @@
                   data-async-form>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="damage">
-            {% for defense_name in ("physical", "elemental", "spiritual") %}
-              <input type="hidden" name="{{ defense_name }}_defense"
-                     value="{{ defenses[defense_name] }}">
-            {% endfor %}
             <div class="hp-damage-fields">
               <label>
                 <span>Dégâts</span>
@@ -250,72 +246,6 @@
     <div class="path-balance">
       <span><strong>{{ available_path_points }}</strong>
         point{{ "s" if available_path_points != 1 }} disponible{{ "s" if available_path_points != 1 }}</span>
-      {% if false %}
-      <details class="action-menu">
-        <summary>Actions
-          <small>{{ available_actions|length + available_passives|length }}</small>
-        </summary>
-        <div class="action-popup">
-          <section>
-            <h3>Actif</h3>
-          {% if available_actions %}
-            {% for action in available_actions %}
-              <article{% if action["key"] is defined %} data-action-key="{{ action['key'] }}"{% endif %}>
-                <div>
-                  <span>{{ action["source"] }}</span>
-                  <strong>{{ action["name"] }}</strong>
-                  {% if action["timing"] not in ("Action", "Objet") or action["uses"] %}
-                    <small>
-                      {% if action["timing"] not in ("Action", "Objet") %}
-                        {{ action["timing"] }}{% if action["uses"] %} · {% endif %}
-                      {% endif %}
-                      {% if action["uses"] %}<i data-action-uses>{{ action["uses"] }}</i>{% endif %}
-                    </small>
-                  {% endif %}
-                  <p>{{ action["effect"] }}</p>
-                </div>
-                {% if action["remaining"] is defined and action["remaining"] is not none %}
-                  <form method="post"
-                        action="{{ url_for('characters.use_action', character_id=character['id']) }}"
-                        data-async-form>
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="path_type" value="{{ action['path_type'] }}">
-                    <input type="hidden" name="path_id" value="{{ action['path_id'] }}">
-                    <input type="hidden" name="rank" value="{{ action['rank'] }}">
-                    <button class="use-action" type="submit"
-                            {% if action["remaining"] == 0 %}disabled{% endif %}
-                            title="Utiliser {{ action['name'] }}">
-                      <span aria-hidden="true">◆</span>
-                      <span class="sr-only">Utiliser</span>
-                    </button>
-                  </form>
-                {% endif %}
-              </article>
-            {% endfor %}
-          {% else %}
-            <p>Aucune action disponible.</p>
-          {% endif %}
-          </section>
-          <section>
-            <h3>Passif</h3>
-          {% if available_passives %}
-            {% for passive in available_passives %}
-              <article>
-                <span>{{ passive["source"] }}</span>
-                <strong>{{ passive["name"] }}</strong>
-                {% if passive["frequency"] != "Équipé" %}
-                  <small>{{ passive["frequency"] }}</small>
-                {% endif %}
-                <p>{{ passive["effect"] }}</p>
-              </article>
-            {% endfor %}
-          {% else %}
-            <p>Aucun bonus passif.</p>
-          {% endif %}
-          </section>
-        </div>
-      </details>
-      {% endif %}
     </div>
     <div class="path-lanes" aria-label="Améliorations des voies">
       {% for path in paths %}
@@ -444,6 +374,19 @@
                           <input type="hidden" name="rank" value="{{ action['rank'] }}">
                           <button class="use-action" type="submit"
                                   {% if action["remaining"] == 0 %}disabled{% endif %}
+                                  title="Utiliser {{ action['name'] }}">
+                            <span aria-hidden="true">◆</span>
+                            <span class="sr-only">Utiliser</span>
+                          </button>
+                        </form>
+                      {% elif action["equipment_id"] is defined %}
+                        <form method="post"
+                              action="{{ url_for('characters.equipment_use',
+                                character_id=character['id'],
+                                equipment_id=action['equipment_id']) }}"
+                              data-async-form>
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button class="use-action" type="submit"
                                   title="Utiliser {{ action['name'] }}">
                             <span aria-hidden="true">◆</span>
                             <span class="sr-only">Utiliser</span>
@@ -982,214 +925,6 @@
     </div>
   </section>
 
-  {% if false %}
-  <section class="simple-equipment" data-sheet-panel="equipment">
-    <header>
-      <h2>Équipement <small>{{ equipment|length }} objet{{ "s" if equipment|length != 1 }}</small></h2>
-      <a class="button"
-         href="{{ url_for('characters.equipment_create', character_id=character['id']) }}">
-        + Ajouter
-      </a>
-    </header>
 
-    {% set groups = [
-      (("weapon", "spell"), "Armes et sorts", ("Nom", "Dés", "Type de dégâts")),
-      (("armor", "shield"), "Armures et boucliers",
-        ("Nom", "Défense physique", "Défense élémentaire", "Défense spirituelle")),
-      (("tool",), "Outils", ("Nom", "Effet")),
-      (("accessory",), "Accessoires", ("Nom", "Stat", "Bonus")),
-      (("consumable", "quest"), "Consommables et items clés", ("Nom", "Effet", "Qté"))
-    ] %}
-    {% set damage_types = {
-      "physical": "Physique", "elemental": "Élémentaire", "spiritual": "Spirituel"
-    } %}
-    {% for types, title, columns in groups %}
-      {% set ns = namespace(items=[]) %}
-      {% for item in equipment if item["item_type"] in types %}
-        {% set ns.items = ns.items + [item] %}
-      {% endfor %}
-      {% if ns.items %}
-        <section class="simple-item-group">
-          <h3>{{ title }}</h3>
-          <div class="simple-item-head simple-cols-{{ columns|length }}">
-            {% for column in columns %}<span>{{ column }}</span>{% endfor %}
-            <span></span>
-          </div>
-          {% for item in ns.items %}
-            <div class="simple-item-row simple-cols-{{ columns|length }}">
-              <strong>{{ item["name"] }}</strong>
-              {% if item["item_type"] in ("weapon", "spell") %}
-                <span>{{ item["damage_dice"] or "—" }}</span>
-                <span>{{ damage_types.get(item["damage_type"], item["damage_type"] or "—") }}</span>
-              {% elif item["item_type"] in ("armor", "shield") %}
-                <span>{{ "%+d"|format(item["physical_bonus"]) }}</span>
-                <span>{{ "%+d"|format(item["elemental_bonus"]) }}</span>
-                <span>{{ "%+d"|format(item["spiritual_bonus"]) }}</span>
-              {% elif item["item_type"] == "accessory" %}
-                <span>{{ item["stat"] or "—" }}</span>
-                <span>{{ "%+d"|format(item["stat_bonus"]) }}</span>
-              {% else %}
-                <span>{{ item["effect"] or "—" }}</span>
-                {% if item["item_type"] in ("consumable", "quest") %}
-                  <span>×{{ item["quantity"] }}</span>
-                {% endif %}
-              {% endif %}
-              <a href="{{ url_for('characters.equipment_edit',
-                        character_id=character['id'], equipment_id=item['id']) }}">
-                Modifier
-              </a>
-            </div>
-          {% endfor %}
-        </section>
-      {% endif %}
-    {% endfor %}
-
-    {% set other_items = equipment|selectattr("item_type", "equalto", "other")|list %}
-    {% if other_items %}
-      <section class="simple-item-group">
-        <h3>Autres</h3>
-        {% for item in other_items %}
-          <div class="simple-item-row simple-cols-2">
-            <strong>{{ item["name"] }}</strong>
-            <span>{{ item["effect"] or "—" }}</span>
-            <a href="{{ url_for('characters.equipment_edit',
-                      character_id=character['id'], equipment_id=item['id']) }}">Modifier</a>
-          </div>
-        {% endfor %}
-      </section>
-    {% endif %}
-    {% if not equipment %}
-      <p class="simple-equipment-empty">Aucun équipement pour le moment.</p>
-    {% endif %}
-  </section>
-  {% endif %}
-
-  {% if false %}
-  <section class="equipment-panel" data-sheet-panel="equipment">
-    <div class="details-content equipment-content">
-    <div class="equipment-heading">
-      <h2>Équipement <small>{{ equipment|length }} objet{{ "s" if equipment|length != 1 }}</small></h2>
-    </div>
-
-    {% set item_types = {
-      "weapon": "Arme", "armor": "Armure", "shield": "Bouclier",
-      "accessory": "Accessoire", "tool": "Outil",
-      "consumable": "Consommable", "spell": "Sort",
-      "quest": "Quête", "other": "Objet"
-    } %}
-    <div class="editable-equipment">
-      <div class="editable-equipment-head" aria-hidden="true">
-        <span>Objet</span><span>Type</span><span>Effet</span>
-        <span>Qté</span><span>Équipé</span><span></span>
-      </div>
-      {% for item in equipment %}
-        <div class="editable-equipment-row {{ 'is-equipped' if item['equipped'] }}">
-          <form method="post"
-                action="{{ url_for('characters.equipment_edit',
-                  character_id=character['id'], equipment_id=item['id']) }}"
-                data-async-form>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="notes" value="{{ item['notes'] }}">
-            <input type="hidden" name="icon_path" value="{{ item['icon_path'] }}">
-            <input name="name" maxlength="100" aria-label="Nom"
-                   value="{{ item['name'] }}" data-submit-on-change required>
-            <select name="item_type" aria-label="Type" data-submit-on-change>
-              {% for value, label in item_types.items() %}
-                <option value="{{ value }}" {{ "selected" if item["item_type"] == value }}>{{ label }}</option>
-              {% endfor %}
-            </select>
-            <input name="effect" maxlength="300" aria-label="Effet"
-                   placeholder="Effet…" value="{{ item['effect'] }}" data-submit-on-change>
-            <input name="quantity" type="number" min="1" aria-label="Quantité"
-                   value="{{ item['quantity'] }}" data-submit-on-change required>
-            <label class="equipment-equipped">
-              <input name="equipped" type="checkbox" value="1"
-                     {{ "checked" if item["equipped"] }} data-submit-on-change>
-              <span class="sr-only">Équipé</span>
-            </label>
-            <div class="equipment-specific" data-item-fields>
-              <div data-fields-for="weapon spell">
-                <label>Dégâts
-                  <input name="damage_dice" maxlength="50" placeholder="2d6"
-                         value="{{ item['damage_dice'] }}" data-submit-on-change>
-                </label>
-                <label>Type
-                  <input name="damage_type" maxlength="50" placeholder="Glace, feu…"
-                         value="{{ item['damage_type'] }}" data-submit-on-change>
-                </label>
-              </div>
-              <div data-fields-for="spell">
-                <label>Utilisations
-                  <input name="uses" maxlength="80" placeholder="2 fois par Repos au Feu"
-                         value="{{ item['uses'] }}" data-submit-on-change>
-                </label>
-              </div>
-              <div data-fields-for="armor shield">
-                <label>Déf. physique
-                  <input name="physical_bonus" type="number"
-                         value="{{ item['physical_bonus'] }}" data-submit-on-change>
-                </label>
-                <label>Déf. élémentaire
-                  <input name="elemental_bonus" type="number"
-                         value="{{ item['elemental_bonus'] }}" data-submit-on-change>
-                </label>
-                <label>Déf. spirituelle
-                  <input name="spiritual_bonus" type="number"
-                         value="{{ item['spiritual_bonus'] }}" data-submit-on-change>
-                </label>
-              </div>
-            </div>
-          </form>
-          <form method="post"
-                action="{{ url_for('characters.equipment_delete',
-                  character_id=character['id'], equipment_id=item['id']) }}"
-                data-confirm="Supprimer {{ item['name'] }} ?"
-                data-async-form>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="equipment-delete" type="submit" aria-label="Supprimer">×</button>
-          </form>
-        </div>
-      {% endfor %}
-      <form class="editable-equipment-row is-new"
-            method="post"
-            action="{{ url_for('characters.equipment_create', character_id=character['id']) }}"
-            data-async-form>
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="notes" value="">
-        <input name="name" maxlength="100" placeholder="Nouvel objet…" required>
-        <select name="item_type" aria-label="Type">
-          {% for value, label in item_types.items() %}
-            <option value="{{ value }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-        <input name="effect" maxlength="300" placeholder="Effet…" aria-label="Effet">
-        <input name="quantity" type="number" min="1" value="1" aria-label="Quantité" required>
-        <input type="hidden" name="equipped" value="0">
-        <button type="submit">Ajouter</button>
-        <div class="equipment-specific" data-item-fields>
-          <div data-fields-for="weapon spell">
-            <label>Dégâts
-              <input name="damage_dice" maxlength="50" placeholder="2d6">
-            </label>
-            <label>Type
-              <input name="damage_type" maxlength="50" placeholder="Glace, feu…">
-            </label>
-          </div>
-          <div data-fields-for="spell">
-            <label>Utilisations
-              <input name="uses" maxlength="80" placeholder="2 fois par Repos au Feu">
-            </label>
-          </div>
-          <div data-fields-for="armor shield">
-            <label>Déf. physique<input name="physical_bonus" type="number" value="0"></label>
-            <label>Déf. élémentaire<input name="elemental_bonus" type="number" value="0"></label>
-            <label>Déf. spirituelle<input name="spiritual_bonus" type="number" value="0"></label>
-          </div>
-        </div>
-      </form>
-    </div>
-    </div>
-  </section>
-  {% endif %}
 </article>
 {% endblock %}

@@ -1,4 +1,5 @@
-import re
+from dnd_manager.characters.common.rules import limited_uses
+from dnd_manager.shared.catalog import ABILITY_ABBREVIATIONS, ABILITY_LABELS
 
 MODIFIER_LABELS = {
     "Force": "strength", "Dextérité": "dexterity", "Constitution": "constitution",
@@ -7,10 +8,8 @@ MODIFIER_LABELS = {
 DAMAGE_TYPES = {
     "physical": "physiques", "elemental": "élémentaires", "spiritual": "spirituels",
 }
-STAT_LABELS = {
-    "FOR": "Force", "DEX": "Dextérité", "CON": "Constitution",
-    "INT": "Intelligence", "SAG": "Sagesse", "CHA": "Charisme",
-}
+STAT_LABELS = {abbreviation: ABILITY_LABELS[field]
+               for abbreviation, field in ABILITY_ABBREVIATIONS.items()}
 
 
 def sheet_actions(paths, unlocked, uses, modifiers, equipment, equipped):
@@ -79,15 +78,10 @@ def append_active(actions, path, rank, uses):
 
 
 def active_entry(path, rank, active, uses):
-    limit = uses_limit(active["uses"])
+    limit = limited_uses(active["uses"])
     spent = uses.get((path["path_type"], path["id"], rank["rank"]), 0)
     remaining = max(0, limit - spent) if limit is not None else None
     return active_values(path, rank, active, limit, remaining)
-
-
-def uses_limit(uses):
-    match = re.match(r"^(\d+)\s+(?:fois|charges)\b", uses, re.IGNORECASE)
-    return int(match.group(1)) if match else None
 
 
 def active_values(path, rank, active, limit, remaining):
@@ -138,18 +132,21 @@ def spell_damage(item):
 def consumable_action(item):
     if not item.equipped:
         return None
+    # `equipment_id` rend l'action déclenchable : sans lui, la fiche affichait
+    # « Utiliser … » sans aucun bouton et l'objet ne pouvait pas être consommé.
     return inventory_action("Consommables", f"Utiliser {item.name}",
-                            f"×{item.quantity}", item.effect)
+                            f"×{item.quantity}", item.effect, equipment_id=item.id)
 
 
 def no_action(_item):
     return None
 
 
-def inventory_action(category, name, uses, effect):
-    return {"category": category, "source": "Inventaire", "name": name,
-            "timing": "Objet", "uses": uses,
-            "effect": effect or "Aucun effet renseigné."}
+def inventory_action(category, name, uses, effect, equipment_id=None):
+    action = {"category": category, "source": "Inventaire", "name": name,
+              "timing": "Objet", "uses": uses,
+              "effect": effect or "Aucun effet renseigné."}
+    return action if equipment_id is None else action | {"equipment_id": equipment_id}
 
 
 INVENTORY_ACTIONS = {"spell": spell_action, "consumable": consumable_action}

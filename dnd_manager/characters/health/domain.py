@@ -21,7 +21,7 @@ class UseEstus:
 
 class TakeDamage:
     def calculate(self, state, command):
-        received = max(0, positive_integer(command.amount) - integer(command.defense))
+        received = max(0, positive_integer(command.amount) - resolved_defense(state, command))
         return max(0, state.current - received)
 
 
@@ -70,6 +70,14 @@ def estus_status(action, available):
 def ensure_estus_available(state):
     if not state.estus_available:
         raise InvalidRequest("L’Estus a déjà été utilisé depuis le dernier repos.")
+
+
+def resolved_defense(state, command):
+    """La Défense provient de l'état chargé, jamais du formulaire."""
+    defenses = dict(state.defenses)
+    if command.damage_type not in defenses:
+        raise InvalidRequest("Type de dégâts invalide.")
+    return defenses[command.damage_type]
 
 
 def positive_integer(value):

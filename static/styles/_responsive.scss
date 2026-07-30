@@ -62,14 +62,6 @@
     display: none;
   }
 
-  .compact-details[data-sheet-panel] > summary {
-    display: none;
-  }
-
-  .compact-details[data-sheet-panel] > .details-content {
-    padding: 0.65rem;
-  }
-
   .sheet-overview {
     grid-template-columns: 1fr;
   }
@@ -157,15 +149,6 @@
     display: none;
   }
 
-  .equipment-heading {
-    flex-wrap: wrap;
-  }
-
-  .equipment-search {
-    width: 100%;
-    order: 3;
-  }
-
   .equipment-effects {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -184,28 +167,6 @@
   .equipment-menu {
     grid-column: 3;
     grid-row: 1;
-  }
-
-  .simple-equipment {
-    padding-inline: 0.4rem;
-  }
-
-  .simple-item-head,
-  .simple-item-row {
-    gap: 0.25rem;
-    font-size: $font-sm;
-  }
-
-  .simple-cols-2 {
-    grid-template-columns: minmax(90px, 1fr) minmax(90px, 1.2fr) 45px;
-  }
-
-  .simple-cols-3 {
-    grid-template-columns: minmax(90px, 1fr) 45px minmax(70px, 0.8fr) 45px;
-  }
-
-  .simple-cols-4 {
-    grid-template-columns: minmax(90px, 1fr) repeat(3, 34px) 45px;
   }
 
   .item-weapon .inline-item-labels,
@@ -288,41 +249,6 @@
   .equipped-mark,
   .souls-item > a {
     grid-column: 2;
-  }
-
-  .editable-equipment-head {
-    display: none;
-  }
-
-  .editable-equipment-row {
-    grid-template-columns: minmax(0, 1fr) 28px;
-    padding-block: 0.5rem;
-  }
-
-  .editable-equipment-row > form:first-child,
-  form.editable-equipment-row {
-    grid-template-columns: minmax(0, 1fr) 85px 42px;
-  }
-
-  .editable-equipment-row input[name="name"],
-  .editable-equipment-row input[name="effect"] {
-    grid-column: 1 / -1;
-  }
-
-  .editable-equipment-row select[name="item_type"] {
-    grid-column: 1;
-  }
-
-  .editable-equipment-row input[name="quantity"] {
-    grid-column: 2;
-  }
-
-  .editable-equipment-row .equipment-equipped {
-    grid-column: 3;
-  }
-
-  form.editable-equipment-row button {
-    grid-column: 3;
   }
 
   .rank-step:hover .rank-tooltip,

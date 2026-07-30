@@ -1,42 +1,4 @@
-.equipment-heading {
-  padding: 0.55rem 0;
-  border-bottom: 1px solid var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-}
 
-.equipment-heading h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.equipment-heading h2 small {
-  margin-left: 0.35rem;
-  color: var(--muted);
-  font-size: $font-sm;
-  font-weight: 400;
-}
-
-.equipment-panel {
-  margin-top: 0.65rem;
-  padding: 0 0.65rem 0.65rem;
-  border-inline: 1px solid var(--border);
-}
-
-.equipment-search {
-  width: calc(min(230px, 35%));
-  margin: 0 0 0 auto;
-}
-
-.equipment-search input {
-  width: 100%;
-  min-height: 32px;
-  margin: 0;
-  padding: 0.3rem 0.55rem;
-  border-radius: 0;
-}
 
 .equipment-filters {
   padding: 0.45rem 0;
@@ -364,105 +326,6 @@
   font-size: 1.1rem;
 }
 
-.editable-equipment-head,
-.editable-equipment-row > form:first-child,
-form.editable-equipment-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) 105px minmax(170px, 1.3fr) 55px 52px;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.editable-equipment-head {
-  grid-template-columns: minmax(150px, 1fr) 105px minmax(170px, 1.3fr) 55px 52px 28px;
-  padding: 0.3rem 0.45rem;
-  color: #8f825f;
-  font-size: $font-xs;
-  text-transform: uppercase;
-}
-
-.editable-equipment-row {
-  position: relative;
-  min-height: 46px;
-  padding: 0.35rem 0.45rem;
-  border-bottom: 1px solid $line-subtle;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.editable-equipment-row.is-equipped {
-  border-left: 2px solid var(--accent);
-  background: #15140f;
-}
-
-.editable-equipment-row form {
-  margin: 0;
-}
-
-.editable-equipment-row input,
-.editable-equipment-row select {
-  min-width: 0;
-  min-height: 31px;
-  margin: 0;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid transparent;
-  border-bottom-color: #4d442d;
-  border-radius: 0;
-  background: transparent;
-  font-size: $font-md;
-}
-
-.editable-equipment-row input:focus,
-.editable-equipment-row select:focus {
-  border-color: var(--accent);
-  outline: 0;
-  background: #090a08;
-}
-
-.equipment-equipped {
-  margin: 0;
-  display: grid;
-  place-items: center;
-}
-
-.equipment-equipped input {
-  width: 18px;
-  min-height: 18px;
-  accent-color: #a98835;
-}
-
-.equipment-specific {
-  grid-column: 1 / -1;
-}
-
-.equipment-specific [data-fields-for] {
-  padding-top: 0.35rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.equipment-specific [data-fields-for][hidden] {
-  display: none;
-}
-
-.equipment-specific label {
-  min-width: 105px;
-  margin: 0;
-  color: #8f825f;
-  font-size: $font-xs;
-  text-transform: uppercase;
-}
-
-.equipment-specific label input {
-  width: 100%;
-  margin-top: 0.15rem;
-  color: var(--text);
-  text-transform: none;
-}
-
 .equipment-delete {
   width: 26px;
   min-height: 26px;
@@ -473,20 +336,6 @@ form.editable-equipment-row {
   font-size: 1.1rem;
 }
 
-form.editable-equipment-row {
-  grid-template-columns: minmax(150px, 1fr) 105px minmax(170px, 1.3fr) 55px 70px;
-  margin: 0;
-  border-left: 0;
-  background: #0c0d0a;
-}
-
-form.editable-equipment-row button {
-  min-height: 31px;
-  padding: 0.25rem;
-  font-size: 0.7rem;
-}
-
-.compact-details summary::after,
 .catalog-group > summary::after {
   content: "  ◆";
   color: var(--border);

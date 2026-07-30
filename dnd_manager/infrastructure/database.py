@@ -4,6 +4,8 @@ from pathlib import Path
 import click
 from flask import current_app, g
 
+from dnd_manager.shared.catalog import EQUIPMENT_SLOTS
+
 
 def get_db():
     if "db" not in g:
@@ -11,16 +13,27 @@ def get_db():
     return g.db
 
 
+CONNECTION_TIMEOUT = 15.0
+CONNECTION_PRAGMAS = (
+    "PRAGMA foreign_keys = ON",
+    # WAL : les lecteurs ne bloquent plus l'écrivain, indispensable avec plusieurs threads.
+    "PRAGMA journal_mode = WAL",
+    "PRAGMA synchronous = NORMAL",
+    f"PRAGMA busy_timeout = {int(CONNECTION_TIMEOUT * 1000)}",
+)
+
+
 def connect_database(path):
     database_path = Path(path)
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    database = sqlite3.connect(database_path)
+    database = sqlite3.connect(database_path, timeout=CONNECTION_TIMEOUT)
     database.row_factory = sqlite3.Row
-    return enable_foreign_keys(database)
+    return configure_connection(database)
 
 
-def enable_foreign_keys(database):
-    database.execute("PRAGMA foreign_keys = ON")
+def configure_connection(database):
+    for pragma in CONNECTION_PRAGMAS:
+        database.execute(pragma)
     return database
 
 
@@ -170,11 +183,6 @@ def reset_legacy_character_fields(database):
             database.execute(f"UPDATE character SET {column} = 0")
 
 
-SLOT_GROUPS = {
-    "weapon": ("right_hand", "left_hand"), "shield": ("right_hand", "left_hand"),
-    "tool": ("right_hand", "left_hand"), "armor": ("armor",),
-    "accessory": ("ring_1", "ring_2", "ring_3", "ring_4"),
-}
 
 
 def migrate_equipment(database):
@@ -209,7 +217,7 @@ def unslotted_items(database, character_id):
 
 
 def assign_item_slot(database, item, used):
-    slot = next((value for value in SLOT_GROUPS.get(item["item_type"], ()) if value not in used), None)
+    slot = next((value for value in EQUIPMENT_SLOTS.get(item["item_type"], ()) if value not in used), None)
     database.execute("UPDATE equipment SET equipped = ?, slot = ? WHERE id = ?",
                      (1 if slot else 0, slot or "", item["id"]))
     if slot:

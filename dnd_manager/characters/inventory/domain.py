@@ -1,4 +1,4 @@
-from dnd_manager.characters.common.health import adjusted_health, maximum_hp
+from dnd_manager.characters.common.rules import adjusted_health, maximum_hp
 from dataclasses import replace
 
 from dnd_manager.characters.inventory.contracts import (
@@ -7,6 +7,7 @@ from dnd_manager.characters.inventory.contracts import (
     ToggleResult,
 )
 from dnd_manager.shared.errors import InvalidRequest
+from dnd_manager.shared.catalog import EQUIPMENT_SLOTS
 
 
 def consume(state):
@@ -26,13 +27,6 @@ def require_quantity(quantity):
         raise InvalidRequest("Ce consommable est épuisé.")
 
 
-EQUIPMENT_SLOTS = {
-    "weapon": ("right_hand", "left_hand"),
-    "shield": ("right_hand", "left_hand"),
-    "tool": ("right_hand", "left_hand"),
-    "armor": ("armor",),
-    "accessory": ("ring_1", "ring_2", "ring_3", "ring_4"),
-}
 QUICK_LABELS = {
     "weapon": "Nouvelle arme",
     "armor": "Nouvelle armure",

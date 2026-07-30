@@ -1,5 +1,8 @@
 import unittest
 
+from dnd_manager.characters.inventory.contracts import EquipmentView
+from dnd_manager.characters.sheet.actions import sheet_actions
+
 from dnd_manager.characters.inventory import (
     ConsumeCommand,
     ConsumeItem,
@@ -122,6 +125,41 @@ class InventoryTestCase(unittest.TestCase):
         repository = MemoryInventoryRepository(item)
         result = DuplicateItem(repository).execute(4, True, DuplicateCommand(8))
         self.assertEqual((result.name, result.equipment_id), ("Épée — copie", 13))
+
+
+class InventoryActionsTestCase(unittest.TestCase):
+    """Une action d'inventaire n'est déclenchable que si elle porte son `equipment_id`."""
+
+    def test_equipped_consumable_exposes_the_item_to_consume(self):
+        item = equipment_view(equipment_id=8, item_type="consumable", equipped=1, quantity=3)
+        actions, _passives = sheet_actions((), {}, {}, {}, (item,), (item,))
+        consumables = [action for action in actions if action["category"] == "Consommables"]
+        self.assertEqual(len(consumables), 1)
+        self.assertEqual(consumables[0]["equipment_id"], 8)
+
+    def test_unequipped_consumable_offers_no_action(self):
+        item = equipment_view(equipment_id=8, item_type="consumable", equipped=0)
+        actions, _passives = sheet_actions((), {}, {}, {}, (item,), ())
+        self.assertEqual(actions, [])
+
+    def test_spell_action_carries_no_equipment_to_consume(self):
+        item = equipment_view(equipment_id=9, item_type="spell", equipped=1,
+                              damage_dice="2d6", damage_type="elemental")
+        actions, _passives = sheet_actions((), {}, {}, {}, (item,), (item,))
+        self.assertNotIn("equipment_id", actions[0])
+
+
+def equipment_view(**changes):
+    values = {
+        "id": 1, "character_id": 4, "name": "Fiole d'Estus", "item_type": "consumable",
+        "quantity": 1, "equipped": 0, "physical_bonus": 0, "elemental_bonus": 0,
+        "spiritual_bonus": 0, "damage_dice": "", "damage_type": "", "uses": "",
+        "stat": "", "stat_bonus": 0, "slot": "", "icon_path": "", "effect": "",
+        "notes": "",
+    }
+    values.update(changes)
+    values["id"] = values.pop("equipment_id", values["id"])
+    return EquipmentView(**values)
 
 
 def toggle_state(**changes):

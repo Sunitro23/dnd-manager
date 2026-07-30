@@ -1,33 +1,22 @@
-from dnd_manager.characters.common.rules import ability_modifier, defense
+"""Détail affiché sous chaque Défense.
 
-DEFENSES = {
-    "physical": ("Constitution", "constitution", "physical_bonus"),
-    "elemental": ("Intelligence", "intelligence", "elemental_bonus"),
-    "spiritual": ("Sagesse", "wisdom", "spiritual_bonus"),
-}
+Le calcul de la valeur vit dans `common.profile`, partagé avec l'application des dégâts.
+"""
 
-
-def defense_context(character, scores, equipped, permanent):
-    values = {name: defense_value(name, character, scores, equipped, permanent)
-              for name in DEFENSES}
-    breakdowns = {name: defense_breakdown(name, character, scores, equipped, permanent)
-                  for name in DEFENSES}
-    return values, breakdowns
+from dnd_manager.characters.common.profile import DEFENSES
+from dnd_manager.characters.common.rules import ability_modifier
 
 
-def defense_value(name, character, scores, equipped, permanent):
-    _label, ability, equipment_field = DEFENSES[name]
-    equipment = (getattr(item, equipment_field) for item in equipped)
-    return (defense(scores[ability], equipment)
-            + character[f"species_{name}_bonus"]
-            + character[f"path_{name}_bonus"] + permanent[name])
+def defense_breakdowns(profile):
+    return {name: defense_breakdown(name, profile) for name in DEFENSES}
 
 
-def defense_breakdown(name, character, scores, equipped, permanent):
+def defense_breakdown(name, profile):
     label, ability, equipment_field = DEFENSES[name]
-    parts = [{"label": label, "value": ability_modifier(scores[ability])}]
-    parts.extend(equipment_parts(equipped, equipment_field))
-    append_breakdown_bonuses(parts, name, character, permanent[name])
+    parts = [{"label": label, "value": ability_modifier(profile.effective_scores[ability])}]
+    parts.extend(equipment_parts(profile.equipped, equipment_field))
+    append_breakdown_bonuses(parts, name, profile.character,
+                             profile.permanent_defense_bonuses[name])
     return parts
 
 

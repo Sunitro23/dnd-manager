@@ -39,7 +39,10 @@ class SyncCharacterResource:
     def execute(self, character_id, resource_key, command):
         resource = find_resource(self.repository.find(character_id), resource_key)
         validate_resource(command, resource)
-        return self.repository.sync_resource(character_id, resource_key, command)
+        result = self.repository.sync_resource(character_id, resource_key, command)
+        if result is None:
+            raise ResourceNotFound("Ressource introuvable.")
+        return result
 
 
 def find_resource(snapshot, resource_key):

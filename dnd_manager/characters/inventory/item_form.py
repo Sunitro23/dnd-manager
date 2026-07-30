@@ -1,24 +1,12 @@
-from dnd_manager.characters.common.health import adjusted_health, maximum_hp
-from dnd_manager.characters.inventory.contracts import ItemData
-
-ITEM_TYPES = (
-    "weapon",
-    "armor",
-    "shield",
-    "accessory",
-    "tool",
-    "consumable",
-    "spell",
-    "quest",
-    "other",
+from dnd_manager.characters.common.constitution import (
+    accessory_constitution_column,
+    effective_constitution,
 )
-EQUIPMENT_SLOTS = {
-    "weapon": ("right_hand", "left_hand"),
-    "shield": ("right_hand", "left_hand"),
-    "tool": ("right_hand", "left_hand"),
-    "armor": ("armor",),
-    "accessory": ("ring_1", "ring_2", "ring_3", "ring_4"),
-}
+from dnd_manager.characters.common.rules import adjusted_health, maximum_hp
+from dnd_manager.characters.inventory.contracts import ItemData
+from dnd_manager.shared.errors import ConcurrentUpdate, InvalidRequest
+from dnd_manager.shared.catalog import EQUIPMENT_SLOTS, ITEM_TYPES
+
 TEXT_FIELDS = {
     "name": (100, True), "damage_dice": (50, False), "damage_type": (50, False),
     "uses": (80, False), "stat": (30, False), "icon_path": (200, False),
@@ -29,16 +17,18 @@ OCCUPIED_SLOTS_SQL = (
     "SELECT slot FROM equipment WHERE character_id = ? AND equipped = 1 "
     "AND slot != '' AND (? IS NULL OR id != ?)"
 )
-HP_SOURCE_SQL = """
-SELECT c.level, c.constitution, c.current_hp, c.max_hp, cc.hit_die,
+HP_SOURCE_SQL = f"""
+SELECT c.level, c.constitution, c.current_hp, c.max_hp, c.version, cc.hit_die,
        cc.constitution_bonus AS class_constitution_bonus,
        COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus,
-       COALESCE((SELECT SUM(e.stat_bonus) FROM equipment e
-                 WHERE e.character_id = c.id AND e.equipped = 1
-                   AND e.item_type = 'accessory' AND e.stat = 'CON'), 0)
-       AS accessory_constitution_bonus
+       {accessory_constitution_column()}
 FROM character c JOIN character_class cc ON cc.id = c.class_id
 LEFT JOIN racial_path rp ON rp.id = c.racial_path_id WHERE c.id = ?
+"""
+UPDATE_HEALTH_SQL = """
+UPDATE character SET current_hp = ?, max_hp = ?,
+    version = version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND version = ?
 """
 
 
@@ -178,24 +168,24 @@ NORMALIZERS = {
 
 def recalculate_hp(database, character_id):
     character = database.execute(HP_SOURCE_SQL, (character_id,)).fetchone()
+    if character is None:
+        raise InvalidRequest("Personnage introuvable ou sans classe.")
     maximum = equipment_maximum(character)
     current = adjusted_health(character["current_hp"], character["max_hp"], maximum)
-    persist_health(database, character_id, current, maximum)
+    persist_health(database, character_id, current, maximum, character["version"])
 
 
-def persist_health(database, character_id, current, maximum):
-    database.execute(
-        "UPDATE character SET current_hp = ?, max_hp = ?, "
-        "version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (current, maximum, character_id),
-    )
+def persist_health(database, character_id, current, maximum, version):
+    """Respecte le verrou optimiste : deux éditions simultanées ne s'écrasent plus."""
+    cursor = database.execute(UPDATE_HEALTH_SQL, (current, maximum, character_id, version))
+    if cursor.rowcount == 0:
+        raise ConcurrentUpdate("La fiche a été modifiée simultanément. Recharge la page.")
 
 
 def equipment_maximum(character):
-    constitution = character["constitution"] + character["class_constitution_bonus"]
-    constitution += character["racial_constitution_bonus"]
-    constitution += character["accessory_constitution_bonus"]
-    return maximum_hp(character["hit_die"], character["level"], constitution)
+    """Doit rester aligné sur `character_maximum` : mêmes sources de bonus."""
+    return maximum_hp(character["hit_die"], character["level"],
+                      effective_constitution(character))
 
 
 def first_available_slot(database, character_id, item_type, equipment_id=None):

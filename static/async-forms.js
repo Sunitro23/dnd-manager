@@ -1,6 +1,6 @@
 const SHEET_SELECTORS = [
   ".character-header", ".sheet-overview", ".progression-panel",
-  ".inline-inventory", ".equipment-panel",
+  ".inline-inventory",
 ];
 
 document.addEventListener("submit", handleAsyncSubmission);

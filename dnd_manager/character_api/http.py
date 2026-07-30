@@ -3,6 +3,7 @@ from dataclasses import asdict
 from flask import Blueprint, current_app, jsonify, request
 
 from dnd_manager.api_access import authentication_required, token_is_valid
+from dnd_manager.authentication.http import is_gm
 from dnd_manager.character_api.application import (
     ListCharacters,
     ReadCharacter,
@@ -117,20 +118,29 @@ def api_error(message, status):
     return jsonify({"error": {"status": status, "message": message}}), status
 
 
+def repository():
+    """Un client porteur du jeton API accède aux fiches réservées au MJ, comme la vue MJ."""
+    return SqliteCharacterExchangeRepository(get_db(), public_only=not trusted_client())
+
+
+def trusted_client():
+    return token_is_valid() or is_gm()
+
+
 def reader():
-    return ReadCharacter(SqliteCharacterExchangeRepository(get_db()))
+    return ReadCharacter(repository())
 
 
 def lister():
-    return ListCharacters(SqliteCharacterExchangeRepository(get_db()))
+    return ListCharacters(repository())
 
 
 def syncer():
-    return SyncCharacterHealth(SqliteCharacterExchangeRepository(get_db()))
+    return SyncCharacterHealth(repository())
 
 
 def resource_syncer():
-    return SyncCharacterResource(SqliteCharacterExchangeRepository(get_db()))
+    return SyncCharacterResource(repository())
 
 
 def ruleset_revision():

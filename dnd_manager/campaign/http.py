@@ -4,14 +4,19 @@ import sqlite3
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
 from dnd_manager.authentication.http import gm_required, is_gm, validate_csrf
+from dnd_manager.characters.common.rules import (
+    MAXIMUM_ABILITY_SCORE,
+    MINIMUM_ABILITY_SCORE,
+    POINT_BUY_BUDGET,
+)
 from dnd_manager.characters.creation.form import catalogue_options, character_values
 from dnd_manager.characters.sheet.presentation import render_character_sheet
 from dnd_manager.infrastructure.database import get_db
+from dnd_manager.shared.catalog import CHARACTER_TYPES, VISIBILITIES
+from dnd_manager.shared.errors import ApplicationError
 
 bp = Blueprint("main", __name__)
 
-CHARACTER_TYPES = ("player", "ally", "npc", "enemy")
-VISIBILITIES = ("campaign", "gm")
 GM_CHARACTERS_SQL = """
 SELECT c.id, c.name, c.character_type, c.visibility, c.current_hp, c.max_hp,
        c.portrait_filename, p.display_name AS owner_name
@@ -94,7 +99,7 @@ def submit_creation(database, options):
     validate_csrf()
     try:
         return persist_character(database, options)
-    except (ValueError, sqlite3.IntegrityError) as error:
+    except (ApplicationError, ValueError, sqlite3.IntegrityError) as error:
         return reject_creation(database, error)
 
 
@@ -131,7 +136,9 @@ def render_creation(_database, options):
     classes, species, players = options
     return render_template("characters/create.html", classes=classes, species=species,
                            players=players, character_types=CHARACTER_TYPES,
-                           visibilities=VISIBILITIES)
+                           visibilities=VISIBILITIES, ability_budget=POINT_BUY_BUDGET,
+                           ability_minimum=MINIMUM_ABILITY_SCORE,
+                           ability_maximum=MAXIMUM_ABILITY_SCORE)
 
 
 @bp.get("/personnages/<int:character_id>")

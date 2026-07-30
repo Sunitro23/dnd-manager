@@ -1,12 +1,10 @@
-const costs = {
-  4: -4, 5: -3, 6: -2, 7: -1, 8: 0, 9: 1, 10: 2, 11: 3,
-  12: 4, 13: 5, 14: 7, 15: 9, 16: 11, 17: 13, 18: 15, 19: 17, 20: 19,
-};
 const abilityNames = [
   "strength", "dexterity", "constitution",
   "intelligence", "wisdom", "charisma",
 ];
 const form = document.getElementById("character-form");
+// Table de coûts et budget fournis par le serveur : une seule source de vérité.
+const rules = JSON.parse(form.dataset.abilityRules);
 const draftKey = "dnd-manager-character-draft";
 
 const modifier = (score) => Math.floor((score - 10) / 2);
@@ -63,15 +61,20 @@ function classBonus(name) {
 
 function pointBuyTotal() {
   return abilityNames.reduce(
-    (total, name) => total + (costs[Number(document.getElementById(name).value)] ?? 99),
+    (total, name) => total + abilityCost(Number(document.getElementById(name).value)),
     0,
   );
 }
 
+function abilityCost(score) {
+  const cost = rules.costs[score];
+  return cost === undefined ? Number.NaN : cost;
+}
+
 function renderBudget(spent) {
   const status = document.getElementById("point-buy-status");
-  status.querySelector("strong").textContent = spent;
-  status.classList.toggle("is-valid", spent === 27);
+  status.querySelector("strong").textContent = Number.isNaN(spent) ? "—" : spent;
+  status.classList.toggle("is-valid", spent === rules.budget);
 }
 
 restoreDraft();

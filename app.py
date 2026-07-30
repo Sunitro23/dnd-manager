@@ -1,9 +1,11 @@
+import json
 import os
 import sqlite3
 from pathlib import Path
 
 from flask import Flask, current_app, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
+from dnd_manager.characters.common.rules import ability_rules
 from dnd_manager.infrastructure import database
 from dnd_manager.authentication import http as auth_http
 from dnd_manager.campaign import http as campaign_http
@@ -52,7 +54,20 @@ def configure_app(app, test_config):
     app.config.from_mapping(BASE_CONFIG)
     app.config.from_mapping(runtime_paths(app))
     apply_test_config(app, test_config)
+    require_complete_configuration(app)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def require_complete_configuration(app):
+    """Échoue au démarrage plutôt qu'au premier accès à la session."""
+    if not app.config.get("SECRET_KEY"):
+        raise RuntimeError("La variable d'environnement SECRET_KEY est obligatoire.")
+    require_api_credentials(app)
+
+
+def require_api_credentials(app):
+    if not app.config["API_PUBLIC"] and not app.config.get("API_TOKEN"):
+        raise RuntimeError("API_TOKEN est obligatoire lorsque API_PUBLIC est désactivé.")
 
 
 def runtime_paths(app):
@@ -79,8 +94,18 @@ def prepare_storage(app):
 def register_components(app):
     database.init_app(app)
     auth_http.init_app(app)
+    register_template_globals(app)
     register_blueprints(app, application_blueprints())
     register_hooks(app)
+
+
+def register_template_globals(app):
+    """Les formulaires lisent les règles depuis le serveur : pas de table dupliquée en JS."""
+    app.jinja_env.globals["ability_rules_json"] = ability_rules_json
+
+
+def ability_rules_json():
+    return json.dumps(ability_rules(), separators=(",", ":"))
 
 
 def application_blueprints():
@@ -96,7 +121,8 @@ def register_blueprints(app, blueprints):
 def register_hooks(app):
     app.after_request(secure_response)
     app.register_error_handler(sqlite3.Error, storage_error)
-    for status in (400, 404, 409, 413, 429, 503):
+    app.register_error_handler(500, unexpected_error)
+    for status in (400, 404, 405, 409, 413, 429, 503):
         app.register_error_handler(status, expected_error)
 
 
@@ -151,9 +177,20 @@ def html_error(error):
     return render_template("error.html", **context), error.code
 
 
-def storage_error(_error):
+def storage_error(error):
+    """Une erreur SQLite reste un incident : la tracer avant de la masquer."""
+    current_app.logger.exception("Erreur SQLite non gérée", exc_info=error)
     message = "Le stockage est momentanément indisponible."
     if asynchronous_request():
         return jsonify(ok=False, message=message), 503
     return render_template("error.html", status=503, title="Service indisponible",
                            message=message), 503
+
+
+def unexpected_error(error):
+    current_app.logger.exception("Erreur interne non gérée", exc_info=error)
+    message = "Une erreur interne est survenue."
+    if asynchronous_request():
+        return jsonify(ok=False, message=message), 500
+    return render_template("error.html", status=500, title="Erreur interne",
+                           message=message), 500

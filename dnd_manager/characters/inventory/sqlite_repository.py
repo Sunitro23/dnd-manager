@@ -1,7 +1,12 @@
 import sqlite3
 from dataclasses import asdict
 
+from dnd_manager.characters.common.constitution import (
+    CONSTITUTION_BONUS_COLUMNS,
+    accessory_constitution_column,
+)
 from dnd_manager.characters.inventory.contracts import (
+    ITEM_FIELDS,
     DuplicateResult,
     EquipmentView,
     ItemCopy,
@@ -11,12 +16,11 @@ from dnd_manager.characters.inventory.contracts import (
     ToggleState,
 )
 from dnd_manager.characters.inventory.item_form import normalize_slot, recalculate_hp
-from dnd_manager.shared.errors import ConcurrentUpdate, InvalidRequest, RepositoryUnavailable
-
-ITEM_FIELDS = (
-    "name", "item_type", "quantity", "equipped", "physical_bonus",
-    "elemental_bonus", "spiritual_bonus", "damage_dice", "damage_type",
-    "uses", "stat", "stat_bonus", "icon_path", "effect", "notes",
+from dnd_manager.shared.errors import (
+    ApplicationError,
+    ConcurrentUpdate,
+    InvalidRequest,
+    RepositoryUnavailable,
 )
 
 
@@ -84,6 +88,9 @@ class SqliteInventoryRepository:
         try:
             equipment_id = persist_item(self.database, character_id, command)
             return SaveItemResult(character_id, equipment_id)
+        except ApplicationError:
+            self.database.rollback()
+            raise
         except ValueError as error:
             self.database.rollback()
             raise InvalidRequest(str(error)) from error
@@ -133,10 +140,9 @@ def commit_consumption(database, cursor):
 def find_toggle_row(database, character_id, public_only, command):
     visibility = "AND c.visibility = 'campaign'" if public_only else ""
     query = ("SELECT e.*, c.level, c.constitution, c.current_hp, c.max_hp, c.version, "
-             "cc.hit_die, cc.constitution_bonus AS class_bonus, "
-             "COALESCE(rp.constitution_bonus, 0) AS racial_bonus, "
-             "COALESCE((SELECT SUM(a.stat_bonus) FROM equipment a WHERE a.character_id = c.id "
-             "AND a.equipped = 1 AND a.item_type = 'accessory' AND a.stat = 'CON'), 0) accessory_bonus "
+             "cc.hit_die, cc.constitution_bonus AS class_constitution_bonus, "
+             "COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus, "
+             f"{accessory_constitution_column()} "
              "FROM equipment e JOIN character c ON c.id = e.character_id "
              "JOIN character_class cc ON cc.id = c.class_id "
              "LEFT JOIN racial_path rp ON rp.id = c.racial_path_id "
@@ -147,7 +153,7 @@ def find_toggle_row(database, character_id, public_only, command):
 def toggle_state(database, row):
     if row is None:
         return None
-    bonus = row["class_bonus"] + row["racial_bonus"] + row["accessory_bonus"]
+    bonus = sum(row[column] for column in CONSTITUTION_BONUS_COLUMNS)
     occupied = occupied_slots(database, row["character_id"], row["id"])
     return ToggleState(row["character_id"], row["id"], row["item_type"],
                        bool(row["equipped"]), row["slot"], occupied, row["level"],

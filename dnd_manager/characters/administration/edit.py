@@ -1,11 +1,13 @@
-from dnd_manager.characters.common.rules import adjusted_current_hp, maximum_hp, valid_point_buy
-
-ABILITY_FIELDS = (
-    "strength", "dexterity", "constitution",
-    "intelligence", "wisdom", "charisma",
+from dnd_manager.characters.common.constitution import accessory_constitution
+from dnd_manager.characters.common.players import find_or_create_owner
+from dnd_manager.characters.common.rules import (
+    adjusted_health,
+    maximum_hp,
+    valid_point_buy,
 )
-CHARACTER_TYPES = ("player", "ally", "npc", "enemy")
-VISIBILITIES = ("campaign", "gm")
+from dnd_manager.shared.catalog import ABILITY_FIELDS, CHARACTER_TYPES, VISIBILITIES
+from dnd_manager.shared.errors import ConcurrentUpdate
+
 UPDATE_SQL = """
 UPDATE character SET name = :name, owner_id = :owner_id, species_id = :species_id,
     racial_path_id = :racial_path_id, character_type = :character_type,
@@ -124,21 +126,11 @@ def resolve_owner(database, form):
     return find_or_create_owner(database, owner_name) if owner_name else None
 
 
-def find_or_create_owner(database, owner_name):
-    query = "SELECT id FROM player WHERE display_name = ? COLLATE NOCASE"
-    owner = database.execute(query, (owner_name,)).fetchone()
-    return owner["id"] if owner else create_owner(database, owner_name)
-
-
-def create_owner(database, owner_name):
-    return database.execute("INSERT INTO player (display_name) VALUES (?)", (owner_name,)).lastrowid
-
-
 def health_values(database, character, values):
     racial_bonus = racial_constitution(database, values["racial_path_id"])
     accessory_bonus = accessory_constitution(database, character["id"])
     new_maximum = edited_maximum(character, values, racial_bonus, accessory_bonus)
-    return {"max_hp": new_maximum, "current_hp": adjusted_current_hp(
+    return {"max_hp": new_maximum, "current_hp": adjusted_health(
             character["current_hp"], character["max_hp"], new_maximum)}
 
 
@@ -156,17 +148,11 @@ def racial_constitution(database, path_id):
     return row["constitution_bonus"] if row else 0
 
 
-def accessory_constitution(database, character_id):
-    query = ("SELECT COALESCE(SUM(stat_bonus), 0) FROM equipment WHERE character_id = ? "
-             "AND equipped = 1 AND item_type = 'accessory' AND stat = 'CON'")
-    return database.execute(query, (character_id,)).fetchone()[0]
-
-
 def ensure_current_version(database, cursor):
+    """Erreur métier typée : la traduction en HTTP appartient au blueprint."""
     if cursor.rowcount == 0:
         database.rollback()
-        from flask import abort
-        abort(409, "La fiche a été modifiée simultanément. Recharge la page.")
+        raise ConcurrentUpdate("La fiche a été modifiée simultanément. Recharge la page.")
 
 
 def clear_changed_species(database, character, values):

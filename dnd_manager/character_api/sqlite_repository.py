@@ -14,9 +14,9 @@ from dnd_manager.character_api.contracts import (
     ResourceValue,
 )
 from dnd_manager.characters.common.rules import ability_modifier
-from dnd_manager.shared.errors import ConcurrentUpdate, RepositoryUnavailable
+from dnd_manager.shared.catalog import ABILITY_ABBREVIATIONS, ABILITY_FIELDS
+from dnd_manager.shared.errors import ConcurrentUpdate, InvalidRequest, RepositoryUnavailable
 
-ABILITIES = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
 CHARACTER_SQL = """
 SELECT c.*, cc.stable_key AS class_key, s.stable_key AS species_key,
        cp.stable_key AS class_path_key, rp.stable_key AS racial_path_key,
@@ -40,8 +40,9 @@ FROM character c JOIN character_class cc ON cc.id = c.class_id
 JOIN species s ON s.id = c.species_id
 LEFT JOIN class_path cp ON cp.id = c.class_path_id
 LEFT JOIN racial_path rp ON rp.id = c.racial_path_id
-WHERE c.id = ?
+WHERE c.id = ? {visibility}
 """
+CAMPAIGN_ONLY = "AND c.visibility = 'campaign'"
 EQUIPMENT_SQL = """
 SELECT stat, SUM(stat_bonus) AS bonus FROM equipment
 WHERE character_id = ? AND equipped = 1 AND item_type = 'accessory'
@@ -74,75 +75,84 @@ WHERE id = ? AND version = ?
 """
 LIST_CHARACTERS = """
 SELECT id, version, name, character_type FROM character
-ORDER BY name COLLATE NOCASE, id
+{visibility} ORDER BY name COLLATE NOCASE, id
 """
 PATH_TABLES = {"class": "class_path", "racial": "racial_path"}
-STAT_KEYS = {"FOR": "strength", "DEX": "dexterity", "CON": "constitution",
-             "INT": "intelligence", "SAG": "wisdom", "CHA": "charisma"}
 
 
 class SqliteCharacterExchangeRepository:
-    def __init__(self, database):
+    """`public_only` reproduit la règle de visibilité de l'interface web : sans cette
+    restriction, l'API exposait les personnages réservés au MJ."""
+
+    def __init__(self, database, public_only=True):
         self.database = database
+        self.public_only = public_only
 
     def find(self, character_id):
         try:
-            return load_snapshot(self.database, character_id)
+            return load_snapshot(self.database, character_id, self.public_only)
         except sqlite3.Error as error:
             raise RepositoryUnavailable("La fiche est temporairement indisponible.") from error
 
     def list(self):
         try:
-            return list_characters(self.database)
+            return list_characters(self.database, self.public_only)
         except sqlite3.Error as error:
             raise RepositoryUnavailable("Les fiches sont temporairement indisponibles.") from error
 
     def sync_health(self, character_id, command):
         try:
-            return persist_health(self.database, character_id, command)
+            return persist_health(self.database, character_id, command, self.public_only)
         except sqlite3.Error as error:
             self.database.rollback()
             raise RepositoryUnavailable("La fiche est temporairement indisponible.") from error
 
     def sync_resource(self, character_id, resource_key, command):
         try:
-            return persist_resource(self.database, character_id, resource_key, command)
+            return persist_resource(self.database, character_id, resource_key, command,
+                                    self.public_only)
         except sqlite3.Error as error:
             self.database.rollback()
             raise RepositoryUnavailable("La ressource est temporairement indisponible.") from error
 
 
-def list_characters(database):
-    rows = database.execute(LIST_CHARACTERS).fetchall()
+def visibility_clause(public_only):
+    return CAMPAIGN_ONLY if public_only else ""
+
+
+def list_characters(database, public_only):
+    query = LIST_CHARACTERS.format(
+        visibility="WHERE visibility = 'campaign'" if public_only else "")
+    rows = database.execute(query).fetchall()
     return tuple(CharacterReference(row["id"], row["version"], row["name"],
                                     row["character_type"]) for row in rows)
 
 
-def load_snapshot(database, character_id):
-    row = database.execute(CHARACTER_SQL, (character_id,)).fetchone()
+def load_snapshot(database, character_id, public_only=True):
+    query = CHARACTER_SQL.format(visibility=visibility_clause(public_only))
+    row = database.execute(query, (character_id,)).fetchone()
     if row is None:
         return None
     abilities = load_abilities(database, row)
     defenses = load_defenses(database, row, abilities)
     equipment = load_equipment_values(database, character_id)
-    feature_ids = load_feature_ids(database, character_id)
-    resources = load_resources(database, character_id)
+    ranks = load_unlocked_ranks(database, character_id)
     return CharacterSnapshot(row["id"], row["version"], row["name"], row["character_type"],
                              row["level"], row["class_key"], row["species_key"],
                              row["class_path_key"], row["racial_path_key"],
                              row["species_size"], row["species_speed"],
                              row["current_hp"], row["max_hp"], abilities,
-                             defenses, equipment, feature_ids, resources)
+                             defenses, equipment, feature_ids(ranks), resources(ranks))
 
 
 def load_abilities(database, character):
     equipment = equipment_bonuses(database, character["id"])
-    return tuple(ability_value(character, equipment, key) for key in ABILITIES)
+    return tuple(ability_value(character, equipment, key) for key in ABILITY_FIELDS)
 
 
 def equipment_bonuses(database, character_id):
     rows = database.execute(EQUIPMENT_SQL, (character_id,)).fetchall()
-    return {STAT_KEYS[row["stat"]]: row["bonus"] for row in rows if row["stat"] in STAT_KEYS}
+    return {ABILITY_ABBREVIATIONS[row["stat"]]: row["bonus"] for row in rows if row["stat"] in ABILITY_ABBREVIATIONS}
 
 
 def ability_value(character, equipment, key):
@@ -170,7 +180,7 @@ def equipment_value(row):
     return EquipmentValue(row["id"], row["name"], row["item_type"], row["quantity"],
                           row["slot"], parse_dice(row["damage_dice"]), row["damage_dice"],
                           row["damage_type"] or None, equipment_defenses(row),
-                          STAT_KEYS.get(row["stat"]), row["stat_bonus"], row["effect"])
+                          ABILITY_ABBREVIATIONS.get(row["stat"]), row["stat_bonus"], row["effect"])
 
 
 def parse_dice(expression):
@@ -183,52 +193,74 @@ def equipment_defenses(row):
     return tuple(DefenseValue(key, value) for key, value in values if value)
 
 
-def load_resources(database, character_id):
+def load_unlocked_ranks(database, character_id):
+    """Un seul parcours des rangs : les définitions de voies sont lues une fois chacune.
+
+    Les deux projections (capacités et ressources) reposaient auparavant sur une requête
+    par rang, chacune reparsant le JSON complet de la voie.
+    """
     rows = database.execute(RANKS_SQL, (character_id,)).fetchall()
-    values = (resource_from_rank(database, row) for row in rows)
+    definitions = path_definitions(database, rows)
+    return tuple((row, rank_definition(definitions, row)) for row in rows)
+
+
+def path_definitions(database, rows):
+    keys = {(row["path_type"], row["path_id"]) for row in rows}
+    return {key: json.loads(ranks_json(database, key)) for key in keys}
+
+
+def ranks_json(database, key):
+    path_type, path_id = key
+    query = f"SELECT ranks_json FROM {PATH_TABLES[path_type]} WHERE id = ?"
+    row = database.execute(query, (path_id,)).fetchone()
+    if row is None:
+        raise InvalidRequest("Une voie débloquée ne figure plus au catalogue de règles.")
+    return row["ranks_json"]
+
+
+def rank_definition(definitions, row):
+    ranks = definitions[(row["path_type"], row["path_id"])]
+    if not 1 <= row["rank"] <= len(ranks):
+        raise InvalidRequest("Un rang débloqué ne figure plus au catalogue de règles.")
+    return ranks[row["rank"] - 1]
+
+
+def resources(ranks):
+    values = (resource_value(row, rank) for row, rank in ranks)
     return tuple(value for value in values if value is not None)
 
 
-def load_feature_ids(database, character_id):
-    rows = database.execute(RANKS_SQL, (character_id,)).fetchall()
-    return tuple(feature_id for row in rows for feature_id in rank_feature_ids(
-        load_rank(database, row)))
+def feature_ids(ranks):
+    return tuple(feature_id for _row, rank in ranks for feature_id in rank_feature_ids(rank))
 
 
 def rank_feature_ids(rank):
     return tuple(f"{rank['id']}.{mode}" for mode in ("active", "passive") if rank.get(mode))
 
 
-def resource_from_rank(database, row):
-    rank = load_rank(database, row)
-    active = rank.get("active") or {}
-    resource = active.get("resource")
+def resource_value(row, rank):
+    resource = (rank.get("active") or {}).get("resource")
     if not resource:
         return None
     return ResourceValue(resource["id"], rank["name"], row["spent"], resource["maximum"])
 
 
-def load_rank(database, row):
-    table = PATH_TABLES[row["path_type"]]
-    query = f"SELECT ranks_json FROM {table} WHERE id = ?"
-    path = database.execute(query, (row["path_id"],)).fetchone()
-    return json.loads(path["ranks_json"])[row["rank"] - 1]
-
-
-def persist_health(database, character_id, command):
-    maximum = maximum_health(database, character_id)
+def persist_health(database, character_id, command, public_only=True):
+    maximum = maximum_health(database, character_id, public_only)
     if maximum is None:
         return None
     current = min(command.current_hp, maximum)
-    cursor = database.execute(UPDATE_HEALTH, (current, character_id, command.expected_version))
-    require_updated(database, cursor)
+    require_updated(database, database.execute(
+        UPDATE_HEALTH, (current, character_id, command.expected_version)))
+    database.commit()
     return HealthSyncResult(character_id, command.expected_version + 1, current, maximum)
 
 
-def persist_resource(database, character_id, resource_key, command):
-    resource = resource_location(database, character_id, resource_key)
+def persist_resource(database, character_id, resource_key, command, public_only=True):
+    resource = resource_location(database, character_id, resource_key, public_only)
     if resource is None:
         return None
+    # Un seul commit : la version et la dépense doivent progresser ensemble.
     update_character_version(database, character_id, command.expected_version)
     upsert_resource_spent(database, character_id, resource, command.spent)
     database.commit()
@@ -236,14 +268,15 @@ def persist_resource(database, character_id, resource_key, command):
     return ResourceSyncResult(character_id, command.expected_version + 1, value)
 
 
-def resource_location(database, character_id, resource_key):
-    rows = database.execute(RANKS_SQL, (character_id,)).fetchall()
-    locations = (resource_location_from_rank(database, row, resource_key) for row in rows)
+def resource_location(database, character_id, resource_key, public_only=True):
+    if not character_is_visible(database, character_id, public_only):
+        return None
+    locations = (resource_location_of(row, rank, resource_key)
+                 for row, rank in load_unlocked_ranks(database, character_id))
     return next((location for location in locations if location), None)
 
 
-def resource_location_from_rank(database, row, resource_key):
-    rank = load_rank(database, row)
+def resource_location_of(row, rank, resource_key):
     resource = (rank.get("active") or {}).get("resource")
     if not resource or resource["id"] != resource_key:
         return None
@@ -270,13 +303,21 @@ def upsert_resource_spent(database, character_id, resource, spent):
                              resource["rank"], spent))
 
 
-def maximum_health(database, character_id):
-    row = database.execute("SELECT max_hp FROM character WHERE id = ?", (character_id,)).fetchone()
+def maximum_health(database, character_id, public_only=True):
+    visibility = "AND visibility = 'campaign'" if public_only else ""
+    row = database.execute(
+        f"SELECT max_hp FROM character WHERE id = ? {visibility}", (character_id,)).fetchone()
     return row["max_hp"] if row else None
 
 
+def character_is_visible(database, character_id, public_only):
+    visibility = "AND visibility = 'campaign'" if public_only else ""
+    query = f"SELECT 1 FROM character WHERE id = ? {visibility}"
+    return database.execute(query, (character_id,)).fetchone() is not None
+
+
 def require_updated(database, cursor):
+    """Ne valide pas la transaction : l'appelant décide du point de commit."""
     if cursor.rowcount == 0:
         database.rollback()
         raise ConcurrentUpdate("La fiche a été modifiée depuis sa dernière lecture.")
-    database.commit()

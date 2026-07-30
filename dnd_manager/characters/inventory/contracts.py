@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 
 @dataclass(frozen=True)
@@ -143,6 +143,13 @@ class SaveItemCommand:
 class SaveItemResult:
     character_id: int
     equipment_id: int
+
+
+ITEM_FIELDS = tuple(field.name for field in fields(ItemData))
+"""Colonnes de données d'un objet, dérivées du contrat pour interdire toute dérive."""
+
+EQUIPMENT_COLUMNS = ITEM_FIELDS + ("slot",)
+"""Toutes les colonnes à recopier lorsqu'un inventaire est cloné."""
 
 
 @dataclass(frozen=True)

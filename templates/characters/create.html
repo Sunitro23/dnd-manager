@@ -9,6 +9,7 @@
       <p>Le MJ doit d’abord ajouter au moins une classe et une espèce.</p>
     {% else %}
       <form id="character-form" method="post"
+            data-ability-rules="{{ ability_rules_json() }}"
             data-has-server-values="{{ '1' if request.form else '0' }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -97,7 +98,7 @@
         {% endif %}
 
         <p id="point-buy-status" class="budget-status" aria-live="polite">
-          Points dépensés : <strong>0</strong> / 27
+          Points dépensés : <strong>0</strong> / {{ ability_budget }}
         </p>
         <div class="ability-grid">
           {% for field, label in [
@@ -111,7 +112,7 @@
                 {{ label }}
               </span>
               <input id="{{ field }}" name="{{ field }}" type="number"
-                     min="4" max="20" required
+                     min="{{ ability_minimum }}" max="{{ ability_maximum }}" required
                      value="{{ request.form.get(field, '8') }}">
               <small data-modifier-for="{{ field }}">−1</small>
             </label>

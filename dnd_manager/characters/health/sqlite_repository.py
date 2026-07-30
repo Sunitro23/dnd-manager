@@ -1,5 +1,6 @@
 import sqlite3
 
+from dnd_manager.characters.common.profile import load_profile
 from dnd_manager.characters.health.contracts import HealthState
 from dnd_manager.shared.errors import ConcurrentUpdate, RepositoryUnavailable
 
@@ -15,8 +16,8 @@ class SqliteHealthRepository:
         self.database = database
 
     def find(self, character_id, public_only):
-        row = self.database.execute(find_query(public_only), (character_id,)).fetchone()
-        return health_state(row)
+        profile = load_profile(self.database, character_id, not public_only)
+        return health_state(profile)
 
     def save(self, state, result):
         try:
@@ -34,16 +35,13 @@ class SqliteHealthRepository:
         raise RepositoryUnavailable("Le stockage des PV est indisponible.") from error
 
 
-def find_query(public_only):
-    visibility = "AND visibility = 'campaign'" if public_only else ""
-    return f"SELECT id, current_hp, max_hp, estus_available, version FROM character WHERE id = ? {visibility}"
-
-
-def health_state(row):
-    if row is None:
+def health_state(profile):
+    if profile is None:
         return None
-    return HealthState(row["id"], row["current_hp"], row["max_hp"],
-                       bool(row["estus_available"]), row["version"])
+    character = profile.character
+    return HealthState(character["id"], character["current_hp"], character["max_hp"],
+                       bool(character["estus_available"]), character["version"],
+                       tuple(profile.defenses.items()))
 
 
 def reset_uses(database, result):

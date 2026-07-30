@@ -7,8 +7,9 @@ const abilityNames = [
   "wisdom",
   "charisma",
 ];
-const costs = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9};
-const fixedGains = {6: 4, 8: 5, 10: 6, 12: 7};
+// Table de coûts, plage et gains de dé de vie fournis par le serveur :
+// une seule source de vérité pour les règles, partagée avec Python.
+const rules = JSON.parse(form.dataset.abilityRules);
 
 function modifier(score) {
   return Math.floor((score - 10) / 2);
@@ -28,7 +29,12 @@ function abilityScores() {
 }
 
 function pointBuyTotal(scores) {
-  return abilityNames.reduce((total, name) => total + (costs[scores[name]] ?? 99), 0);
+  return abilityNames.reduce((total, name) => total + abilityCost(scores[name]), 0);
+}
+
+function abilityCost(score) {
+  const cost = rules.costs[score];
+  return cost === undefined ? Number.NaN : cost;
 }
 
 function previewHealth(scores) {
@@ -40,19 +46,23 @@ function previewHealth(scores) {
 
 function maximumHealth(hitDie, level, constitutionModifier) {
   const firstLevel = Math.max(1, hitDie + constitutionModifier);
-  const laterGain = Math.max(1, fixedGains[hitDie] + constitutionModifier);
+  const laterGain = Math.max(1, rules.hit_die_gains[hitDie] + constitutionModifier);
   const newMaximum = firstLevel + (level - 1) * laterGain;
   return adjustedHealth(newMaximum);
 }
 
 function effectiveConstitution(scores) {
-  const classBonus = Number(form.dataset.classConstitutionBonus || 0);
-  return scores.constitution + classBonus + racialConstitutionBonus();
+  return scores.constitution + constitutionBonus("classConstitutionBonus") +
+    racialConstitutionBonus() + constitutionBonus("accessoryConstitutionBonus");
+}
+
+function constitutionBonus(name) {
+  return Number(form.dataset[name] || 0);
 }
 
 function racialConstitutionBonus() {
   const unchanged = document.getElementById("species_id").value === form.dataset.originalSpeciesId;
-  return unchanged ? Number(form.dataset.racialConstitutionBonus || 0) : 0;
+  return unchanged ? constitutionBonus("racialConstitutionBonus") : 0;
 }
 
 function adjustedHealth(newMaximum) {
@@ -68,10 +78,11 @@ function adjustedCurrent(current, oldMaximum, newMaximum) {
 
 function renderPreview(spent, health) {
   const preview = document.getElementById("admin-character-preview");
+  const budget = Number.isNaN(spent) ? "—" : spent;
   preview.textContent =
-    `Budget : ${spent}/27 · PV : ${health.currentHp}/${health.oldMaximum} → ` +
+    `Budget : ${budget}/${rules.budget} · PV : ${health.currentHp}/${health.oldMaximum} → ` +
     `${health.newCurrent}/${health.newMaximum}`;
-  preview.classList.toggle("is-valid", spent === 27);
+  preview.classList.toggle("is-valid", spent === rules.budget);
 }
 
 function bindPreviewFields() {

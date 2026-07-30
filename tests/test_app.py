@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,6 +35,15 @@ class ApplicationTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.temporary_directory.cleanup()
+
+    @contextmanager
+    def silenced_logger(self):
+        """Les incidents attendus sont journalisés : éviter le bruit dans la sortie."""
+        self.app.logger.disabled = True
+        try:
+            yield
+        finally:
+            self.app.logger.disabled = False
 
     def csrf_token(self):
         self.client.get("/mj/connexion")
@@ -491,7 +501,8 @@ class ApplicationTestCase(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("12 → 7", response.get_data(as_text=True))
+        # 5 dégâts physiques réduits par la Défense physique (+2 de Constitution).
+        self.assertIn("12 → 9", response.get_data(as_text=True))
 
         with self.app.app_context():
             from dnd_manager.infrastructure.database import get_db
@@ -500,7 +511,7 @@ class ApplicationTestCase(unittest.TestCase):
             hp = database.execute(
                 "SELECT current_hp FROM character WHERE id = ?", (character_id,)
             ).fetchone()["current_hp"]
-            self.assertEqual(hp, 7)
+            self.assertEqual(hp, 9)
             tables = {
                 row[0]
                 for row in database.execute(
@@ -524,24 +535,54 @@ class ApplicationTestCase(unittest.TestCase):
         self.assertEqual(response.json["current_hp"], 6)
         self.assertTrue(response.json["ok"])
 
-    def test_damage_uses_the_selected_defense(self):
-        character_id = self.create_public_character()
-        response = self.client.post(
-            f"/personnages/{character_id}/pv",
-            data={
-                "csrf_token": self.csrf_token(),
-                "action": "damage",
-                "amount": "5",
-                "damage_type": "elemental",
-                "physical_defense": "1",
-                "elemental_defense": "2",
-                "spiritual_defense": "3",
-            },
-            headers={"X-Requested-With": "XMLHttpRequest"},
-        )
+    def apply_damage(self, character_id, amount, **overrides):
+        values = {"csrf_token": self.csrf_token(), "action": "damage", "amount": str(amount)}
+        values.update(overrides)
+        return self.client.post(f"/personnages/{character_id}/pv", data=values,
+                                headers={"X-Requested-With": "XMLHttpRequest"})
 
+    def restore_health(self, character_id):
+        self.client.post(f"/personnages/{character_id}/pv",
+                         data={"csrf_token": self.csrf_token(), "action": "rest"})
+
+    def test_damage_uses_the_defense_matching_the_damage_type(self):
+        # Constitution 15 donne +2 en Défense physique, Intelligence 10 donne +0 en élémentaire.
+        character_id = self.create_public_character()
+        physical = self.apply_damage(character_id, 5, damage_type="physical")
+        self.restore_health(character_id)
+        elemental = self.apply_damage(character_id, 5, damage_type="elemental")
+        self.assertEqual(physical.json["current_hp"], 9)
+        self.assertEqual(elemental.json["current_hp"], 7)
+
+    def test_damage_ignores_a_defense_supplied_by_the_client(self):
+        character_id = self.create_public_character()
+        response = self.apply_damage(character_id, 5, damage_type="physical",
+                                     physical_defense="99", elemental_defense="99",
+                                     spiritual_defense="99")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["current_hp"], 9)
+
+    def test_damage_rejects_an_unknown_damage_type(self):
+        response = self.apply_damage(self.create_public_character(), 5,
+                                     damage_type="radiant")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Type de dégâts invalide", response.json["message"])
+
+    def test_damage_applies_defense_granted_by_equipped_armour(self):
+        character_id = self.create_public_character()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+
+            database = get_db()
+            database.execute(
+                "INSERT INTO equipment (character_id, name, item_type, equipped, slot, "
+                "physical_bonus) VALUES (?, 'Cuirasse', 'armor', 1, 'armor', 3)",
+                (character_id,),
+            )
+            database.commit()
+        # 5 dégâts - (2 de Constitution + 3 de la cuirasse) = 0
+        response = self.apply_damage(character_id, 5, damage_type="physical")
+        self.assertEqual(response.json["current_hp"], 12)
 
     def test_estus_is_single_use_and_rest_restores_it(self):
         character_id = self.create_public_character()
@@ -1080,7 +1121,8 @@ class ApplicationTestCase(unittest.TestCase):
                 "SELECT current_hp, max_hp FROM character WHERE id = ?",
                 (character_id,),
             ).fetchone()
-            self.assertEqual(character["current_hp"], 7)
+            # 12 - (5 - 2 de Défense physique) = 9, conservé après le passage au niveau 2.
+            self.assertEqual(character["current_hp"], 9)
             self.assertEqual(character["max_hp"], 20)
 
     def test_gm_cannot_lower_level_or_break_point_buy(self):
@@ -1488,10 +1530,18 @@ class ApplicationTestCase(unittest.TestCase):
 
     def test_database_outage_returns_controlled_service_unavailable(self):
         failure = sqlite3.OperationalError("storage offline")
-        with patch("dnd_manager.campaign.http.get_db", side_effect=failure):
+        with self.silenced_logger(), patch("dnd_manager.campaign.http.get_db",
+                                           side_effect=failure):
             response = self.client.get("/health")
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("storage offline", response.get_data(as_text=True))
+
+    def test_database_outage_is_logged_as_an_incident(self):
+        failure = sqlite3.OperationalError("storage offline")
+        with self.assertLogs(self.app.logger, level="ERROR") as logs:
+            with patch("dnd_manager.campaign.http.get_db", side_effect=failure):
+                self.client.get("/health")
+        self.assertIn("storage offline", "\n".join(logs.output))
 
     def test_public_list_stays_fast_with_realistic_volume(self):
         with self.app.app_context():

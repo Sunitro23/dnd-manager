@@ -10,9 +10,11 @@
     </p>
 
     <form id="admin-character-form" method="post"
+          data-ability-rules="{{ ability_rules_json() }}"
           data-hit-die="{{ character['hit_die'] }}"
           data-class-constitution-bonus="{{ character['class_constitution_bonus'] }}"
           data-racial-constitution-bonus="{{ character['racial_constitution_bonus'] }}"
+          data-accessory-constitution-bonus="{{ accessory_constitution_bonus }}"
           data-original-species-id="{{ character['species_id'] }}"
           data-old-max-hp="{{ character['max_hp'] }}"
           data-current-hp="{{ character['current_hp'] }}">
@@ -76,7 +78,9 @@
       </select>
 
       <h2>Caractéristiques</h2>
-      <p class="field-note">Les six scores doivent toujours utiliser exactement 27 points.</p>
+      <p class="field-note">
+        Les six scores doivent toujours utiliser exactement {{ ability_budget }} points.
+      </p>
       <p id="admin-character-preview" class="budget-status" aria-live="polite"></p>
       <div class="ability-grid">
         {% set labels = {
@@ -91,7 +95,7 @@
               {{ labels[field] }}
             </span>
             <input id="{{ field }}" name="{{ field }}" type="number"
-                   min="8" max="15" required
+                   min="{{ ability_minimum }}" max="{{ ability_maximum }}" required
                    value="{{ request.form.get(field, character[field]) }}">
           </label>
         {% endfor %}

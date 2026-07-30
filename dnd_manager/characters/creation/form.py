@@ -1,11 +1,10 @@
+from dnd_manager.characters.common.players import find_or_create_owner
 from dnd_manager.characters.common.rules import maximum_hp, point_buy_total, valid_point_buy
-
-ABILITY_FIELDS = (
-    "strength", "dexterity", "constitution",
-    "intelligence", "wisdom", "charisma",
+from dnd_manager.shared.catalog import (
+    ABILITY_FIELDS,
+    CHARACTER_TYPES,
+    VISIBILITIES,
 )
-CHARACTER_TYPES = ("player", "ally", "npc", "enemy")
-VISIBILITIES = ("campaign", "gm")
 
 
 def required_text(form, name, maximum):
@@ -150,15 +149,6 @@ def resolve_owner(database, form):
     return find_or_create_owner(database, owner_name) if owner_name else None
 
 
-def find_or_create_owner(database, owner_name):
-    owner = database.execute(
-        "SELECT id FROM player WHERE display_name = ? COLLATE NOCASE", (owner_name,)
-    ).fetchone()
-    return owner["id"] if owner else create_owner(database, owner_name)
-
-
-def create_owner(database, owner_name):
-    return database.execute("INSERT INTO player (display_name) VALUES (?)", (owner_name,)).lastrowid
 
 
 def character_maximum(class_item, scores, level):

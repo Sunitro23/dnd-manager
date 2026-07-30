@@ -1,13 +1,14 @@
 import json
 from pathlib import Path
 
-from dnd_manager.characters.common.rules import adjusted_current_hp, maximum_hp
+from dnd_manager.characters.common.constitution import (
+    accessory_constitution_column,
+    effective_constitution,
+)
+from dnd_manager.characters.common.rules import adjusted_health, maximum_hp
 from dnd_manager.configuration.validation import validate_config
+from dnd_manager.shared.catalog import ABILITY_ABBREVIATIONS
 
-ABILITY_ABBREVIATIONS = {
-    "FOR": "strength", "DEX": "dexterity", "CON": "constitution",
-    "INT": "intelligence", "SAG": "wisdom", "CHA": "charisma",
-}
 CLASS_SQL = """
 INSERT INTO character_class (
     stable_key, name, hit_die, strength_bonus, dexterity_bonus,
@@ -76,13 +77,19 @@ WHERE racial_path_id IS NOT NULL AND NOT EXISTS (
       AND cr.path_id = character.racial_path_id AND cr.rank = 1
 )
 """
-CHARACTERS_SQL = """
-SELECT c.id, c.level, c.constitution, c.current_hp, c.max_hp, cc.hit_die,
+CHARACTERS_SQL = f"""
+SELECT c.id, c.level, c.constitution, c.current_hp, c.max_hp, c.version, cc.hit_die,
        cc.constitution_bonus AS class_constitution_bonus,
-       COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus
+       COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus,
+       {accessory_constitution_column()}
 FROM character c
 JOIN character_class cc ON cc.id = c.class_id
 LEFT JOIN racial_path rp ON rp.id = c.racial_path_id
+"""
+REFRESH_CHARACTER_SQL = """
+UPDATE character SET current_hp = ?, max_hp = ?, version = version + 1,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
 """
 
 
@@ -188,12 +195,13 @@ def refresh_characters(database):
 
 def refresh_character(database, character):
     new_maximum = character_maximum(character)
-    current = adjusted_current_hp(character["current_hp"], character["max_hp"], new_maximum)
-    database.execute("UPDATE character SET current_hp = ?, max_hp = ? WHERE id = ?",
-                     (current, new_maximum, character["id"]))
+    current = adjusted_health(character["current_hp"], character["max_hp"], new_maximum)
+    if (current, new_maximum) == (character["current_hp"], character["max_hp"]):
+        return
+    database.execute(REFRESH_CHARACTER_SQL, (current, new_maximum, character["id"]))
 
 
 def character_maximum(character):
-    constitution = (character["constitution"] + character["class_constitution_bonus"]
-                    + character["racial_constitution_bonus"])
-    return maximum_hp(character["hit_die"], character["level"], constitution)
+    """Doit rester aligné sur `equipment_maximum` : mêmes sources de bonus."""
+    return maximum_hp(character["hit_die"], character["level"],
+                      effective_constitution(character))

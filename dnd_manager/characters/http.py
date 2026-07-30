@@ -60,31 +60,14 @@ from dnd_manager.shared.errors import (
     ResourceNotFound,
 )
 from dnd_manager.characters.inventory.icons import icon_page, interface_asset_path, page_number
+from dnd_manager.shared.catalog import ITEM_TYPES
 
 bp = Blueprint("characters", __name__, url_prefix="/personnages")
 
-ITEM_TYPES = (
-    "weapon",
-    "armor",
-    "shield",
-    "accessory",
-    "tool",
-    "consumable",
-    "spell",
-    "quest",
-    "other",
-)
 IMAGE_SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", ".png"),
     (b"\xff\xd8\xff", ".jpg"),
 )
-EQUIPMENT_SLOTS = {
-    "weapon": ("right_hand", "left_hand"),
-    "shield": ("right_hand", "left_hand"),
-    "tool": ("right_hand", "left_hand"),
-    "armor": ("armor",),
-    "accessory": ("ring_1", "ring_2", "ring_3", "ring_4"),
-}
 PROJECT_ROOT = Path(__file__).parents[2]
 ITEM_ICON_ROOT = PROJECT_ROOT / "assets" / "item-icons"
 INTERFACE_ASSET_ROOT = PROJECT_ROOT / "static" / "icons" / "interface"
@@ -282,15 +265,9 @@ def health_service():
 
 
 def health_command():
-    action = request.form.get("action", "")
-    return HealthCommand(action, request.form.get("amount", ""), selected_defense())
-
-
-def selected_defense():
-    damage_type = request.form.get("damage_type", "physical")
-    if damage_type not in {"physical", "elemental", "spiritual"}:
-        return "invalid"
-    return request.form.get(f"{damage_type}_defense", "0")
+    """La Défense n'est plus reçue du client : elle est recalculée au moment du coup."""
+    return HealthCommand(request.form.get("action", ""), request.form.get("amount", ""),
+                         request.form.get("damage_type", "physical"))
 
 
 def application_failure(error):
@@ -442,6 +419,9 @@ def equipment_attempt(operation, *arguments):
 
 def rejected_equipment(error, renderer, *arguments):
     get_db().rollback()
+    if asynchronous_request():
+        # Sans cela le client recevait du HTML et affichait le titre de la page en message.
+        return jsonify(ok=False, message=str(error)), application_error_status(error)
     flash(str(error), "error")
     return renderer(*arguments)
 

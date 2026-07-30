@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class HealthCommand:
     action: str
     amount: str = ""
-    defense: str = "0"
+    damage_type: str = "physical"
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class HealthState:
     maximum: int
     estus_available: bool
     version: int
+    # Défenses résolues côté serveur : le client ne les fournit plus.
+    defenses: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)

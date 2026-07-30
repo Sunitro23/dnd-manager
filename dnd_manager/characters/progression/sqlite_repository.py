@@ -2,6 +2,12 @@ import json
 import sqlite3
 
 from dnd_manager.automation.compiler import compile_effect
+from dnd_manager.characters.common.constitution import (
+    CONSTITUTION_BONUS_COLUMNS,
+    accessory_constitution,
+    accessory_constitution_column,
+    effective_constitution,
+)
 from dnd_manager.characters.common.rules import ability_modifier
 from dnd_manager.characters.progression.contracts import (
     ActionState,
@@ -9,18 +15,16 @@ from dnd_manager.characters.progression.contracts import (
     RacialBonusState,
     RankState,
 )
-from dnd_manager.shared.errors import ConcurrentUpdate, RepositoryUnavailable
+from dnd_manager.shared.errors import ConcurrentUpdate, InvalidRequest, RepositoryUnavailable
 
-FIND_PROGRESSION = """
+FIND_PROGRESSION = f"""
 SELECT c.id, c.level, c.current_hp, c.max_hp, c.constitution, c.version,
-       cc.hit_die, cc.constitution_bonus AS class_bonus,
-       COALESCE(rp.constitution_bonus, 0) AS racial_bonus,
-       COALESCE((SELECT SUM(e.stat_bonus) FROM equipment e
-                 WHERE e.character_id = c.id AND e.equipped = 1
-                   AND e.item_type = 'accessory' AND e.stat = 'CON'), 0) AS equipment_bonus
+       cc.hit_die, cc.constitution_bonus AS class_constitution_bonus,
+       COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus,
+       {accessory_constitution_column()}
 FROM character c JOIN character_class cc ON cc.id = c.class_id
 LEFT JOIN racial_path rp ON rp.id = c.racial_path_id
-WHERE c.id = ? {visibility}
+WHERE c.id = ? {{visibility}}
 """
 UPDATE_LEVEL = """
 UPDATE character SET level = ?, current_hp = ?, max_hp = ?,
@@ -78,8 +82,13 @@ class SqliteProgressionRepository:
     def find_action(self, character_id, public_only, command):
         try:
             return load_action(self.database, character_id, public_only, command)
-        except (sqlite3.Error, ValueError, KeyError, IndexError, TypeError) as error:
+        except sqlite3.Error as error:
             self.fail(error)
+        except (json.JSONDecodeError, KeyError, TypeError) as error:
+            # Catalogue de règles incohérent : ce n'est pas une panne de stockage.
+            self.database.rollback()
+            raise InvalidRequest("Le catalogue de règles est incohérent "
+                                 "pour cette compétence.") from error
 
     def save_action(self, state, result):
         try:
@@ -117,7 +126,7 @@ def find_query(public_only):
 def progression_state(row):
     if row is None:
         return None
-    bonus = row["class_bonus"] + row["racial_bonus"] + row["equipment_bonus"]
+    bonus = sum(row[column] for column in CONSTITUTION_BONUS_COLUMNS)
     return ProgressionState(row["id"], row["level"], row["current_hp"], row["max_hp"],
                             row["constitution"], row["hit_die"], bonus, row["version"])
 
@@ -184,11 +193,9 @@ def load_action(database, character_id, public_only, command):
 
 def find_action_character(database, character_id, public_only):
     visibility = "AND c.visibility = 'campaign'" if public_only else ""
-    query = ("SELECT c.*, cc.constitution_bonus AS class_bonus, "
-             "COALESCE(rp.constitution_bonus, 0) AS racial_bonus, "
-             "COALESCE((SELECT SUM(e.stat_bonus) FROM equipment e WHERE e.character_id = c.id "
-             "AND e.equipped = 1 AND e.item_type = 'accessory' AND e.stat = 'CON'), 0) "
-             "AS equipment_bonus FROM character c "
+    query = ("SELECT c.*, cc.constitution_bonus AS class_constitution_bonus, "
+             "COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus, "
+             f"{accessory_constitution_column()} FROM character c "
              "JOIN character_class cc ON cc.id = c.class_id "
              f"LEFT JOIN racial_path rp ON rp.id = c.racial_path_id WHERE c.id = ? {visibility}")
     return database.execute(query, (character_id,)).fetchone()
@@ -204,7 +211,7 @@ def action_state(database, character, command, path):
     character_id = character["id"]
     if path is None or not action_unlocked(database, character_id, command):
         return ActionState(character_id, "", "", 0, False)
-    rank = json.loads(path["ranks_json"])[command.rank - 1]
+    rank = rank_definition(path["ranks_json"], command.rank)
     active = rank.get("active") or {}
     resource = active.get("resource") or {}
     return ActionState(character_id, rank["name"], active.get("uses", ""),
@@ -213,10 +220,15 @@ def action_state(database, character, command, path):
                        action_modifiers(character), compiled_effects(active))
 
 
+def rank_definition(serialized_ranks, rank_number):
+    ranks = json.loads(serialized_ranks)
+    if not 1 <= rank_number <= len(ranks):
+        raise InvalidRequest("Cette capacité ne figure pas au catalogue de règles.")
+    return ranks[rank_number - 1]
+
+
 def action_modifiers(character):
-    score = sum(character[key] for key in ("constitution", "class_bonus", "racial_bonus",
-                                           "equipment_bonus"))
-    return (("constitution", ability_modifier(score)),)
+    return (("constitution", ability_modifier(effective_constitution(character))),)
 
 
 def compiled_effects(active):
@@ -289,12 +301,6 @@ def racial_bonus_state(database, character, path, path_id):
                             character["constitution"], character["hit_die"], bonus,
                             character["version"], available,
                             racial_rank_unlocked(database, character["id"], path_id))
-
-
-def accessory_constitution(database, character_id):
-    query = ("SELECT COALESCE(SUM(stat_bonus), 0) FROM equipment WHERE character_id = ? "
-             "AND equipped = 1 AND item_type = 'accessory' AND stat = 'CON'")
-    return database.execute(query, (character_id,)).fetchone()[0]
 
 
 def racial_rank_unlocked(database, character_id, path_id):
