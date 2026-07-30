@@ -1,0 +1,169 @@
+import sqlite3
+
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+
+from dnd_manager.characters.administration.edit import update_character
+from dnd_manager.authentication.http import gm_required, validate_csrf
+from dnd_manager.infrastructure.database import get_db
+
+bp = Blueprint("admin", __name__, url_prefix="/mj")
+
+CHARACTER_TYPES = ("player", "ally", "npc", "enemy")
+VISIBILITIES = ("campaign", "gm")
+ABILITY_FIELDS = (
+    "strength",
+    "dexterity",
+    "constitution",
+    "intelligence",
+    "wisdom",
+    "charisma",
+)
+ADMIN_CHARACTER_SQL = """
+SELECT c.*, cc.name AS class_name, cc.hit_die,
+       cc.strength_bonus AS class_strength_bonus,
+       cc.dexterity_bonus AS class_dexterity_bonus,
+       cc.constitution_bonus AS class_constitution_bonus,
+       cc.intelligence_bonus AS class_intelligence_bonus,
+       cc.wisdom_bonus AS class_wisdom_bonus,
+       cc.charisma_bonus AS class_charisma_bonus,
+       COALESCE(rp.strength_bonus, 0) AS racial_strength_bonus,
+       COALESCE(rp.dexterity_bonus, 0) AS racial_dexterity_bonus,
+       COALESCE(rp.constitution_bonus, 0) AS racial_constitution_bonus,
+       COALESCE(rp.intelligence_bonus, 0) AS racial_intelligence_bonus,
+       COALESCE(rp.wisdom_bonus, 0) AS racial_wisdom_bonus,
+       COALESCE(rp.charisma_bonus, 0) AS racial_charisma_bonus,
+       p.display_name AS owner_name
+FROM character c
+JOIN character_class cc ON cc.id = c.class_id
+LEFT JOIN racial_path rp ON rp.id = c.racial_path_id
+LEFT JOIN player p ON p.id = c.owner_id
+WHERE c.id = ?
+"""
+COPY_CHARACTER_SQL = """
+INSERT INTO character (
+    campaign_id, owner_id, class_id, species_id, class_path_id, racial_path_id,
+    name, character_type, visibility, level, description, personal_info,
+    strength, dexterity, constitution, intelligence, wisdom, charisma,
+    current_hp, max_hp
+)
+SELECT campaign_id, NULL, class_id, species_id, class_path_id, racial_path_id,
+       ?, character_type, visibility, level, description, personal_info,
+       strength, dexterity, constitution, intelligence, wisdom, charisma,
+       current_hp, max_hp
+FROM character WHERE id = ?
+"""
+COPY_RANKS_SQL = """
+INSERT INTO character_rank (character_id, path_type, path_id, rank)
+SELECT ?, path_type, path_id, rank FROM character_rank WHERE character_id = ?
+"""
+COPY_EQUIPMENT_SQL = """
+INSERT INTO equipment (
+    character_id, name, item_type, quantity, equipped,
+    physical_bonus, elemental_bonus, spiritual_bonus, notes
+)
+SELECT ?, name, item_type, quantity, equipped,
+       physical_bonus, elemental_bonus, spiritual_bonus, notes
+FROM equipment WHERE character_id = ?
+"""
+
+
+def character_for_admin(character_id):
+    character = get_db().execute(ADMIN_CHARACTER_SQL, (character_id,)).fetchone()
+    if character is None:
+        abort(404)
+    return character
+
+
+def submit_character_edit(database, character):
+    validate_csrf()
+    return attempt_character_edit(database, character)
+
+
+def attempt_character_edit(database, character):
+    try:
+        update_character(database, character, request.form)
+    except (ValueError, sqlite3.IntegrityError) as error:
+        return rejected_edit(database, error)
+    return accepted_edit(character["id"])
+
+
+def rejected_edit(database, error):
+    database.rollback()
+    message = "Ce nom de propriétaire existe déjà." if isinstance(
+        error, sqlite3.IntegrityError) else str(error)
+    flash(message, "error")
+
+
+def accepted_edit(character_id):
+    flash("Personnage mis à jour.", "success")
+    return redirect(url_for("main.character_detail", character_id=character_id))
+
+
+@bp.route("/personnages/<int:character_id>/modifier", methods=("GET", "POST"))
+@gm_required
+def character_edit(character_id):
+    database = get_db()
+    character = character_for_admin(character_id)
+    options = admin_options(database)
+    return EDIT_HANDLERS[request.method](database, character, options)
+
+
+def show_character_edit(_database, character, options):
+    return render_character_form(character, options)
+
+
+def post_character_edit(database, character, options):
+    response = submit_character_edit(database, character)
+    if response:
+        return response
+    return render_character_form(character_for_admin(character["id"]), options)
+
+
+EDIT_HANDLERS = {"GET": show_character_edit, "POST": post_character_edit}
+
+
+def admin_options(database):
+    species = database.execute("SELECT id, name FROM species WHERE configured = 1 "
+                               "ORDER BY name COLLATE NOCASE").fetchall()
+    players = database.execute("SELECT id, display_name FROM player "
+                               "ORDER BY display_name COLLATE NOCASE").fetchall()
+    return species, players
+
+
+def render_character_form(character, options):
+    species, players = options
+    return render_template("admin/character_form.html", character=character, species=species,
+                           players=players, character_types=CHARACTER_TYPES,
+                           visibilities=VISIBILITIES, abilities=ABILITY_FIELDS)
+
+
+@bp.post("/personnages/<int:character_id>/dupliquer")
+@gm_required
+def character_duplicate(character_id):
+    validate_csrf()
+    return duplicated_response(duplicate_from_id(character_id))
+
+
+def duplicate_from_id(character_id):
+    database = get_db()
+    source = character_for_admin(character_id)
+    copy_name = f"{source['name'][:68]} — copie"
+    return duplicate_character(database, character_id, copy_name)
+
+
+def duplicated_response(copy_id):
+    flash("Personnage dupliqué sans propriétaire.", "success")
+    return redirect(url_for("main.character_detail", character_id=copy_id))
+
+
+def duplicate_character(database, character_id, copy_name):
+    cursor = database.execute(COPY_CHARACTER_SQL, (copy_name, character_id))
+    copy_id = cursor.lastrowid
+    copy_character_relations(database, character_id, copy_id)
+    database.commit()
+    return copy_id
+
+
+def copy_character_relations(database, source_id, copy_id):
+    database.execute(COPY_RANKS_SQL, (copy_id, source_id))
+    database.execute(COPY_EQUIPMENT_SQL, (copy_id, source_id))

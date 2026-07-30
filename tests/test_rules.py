@@ -1,6 +1,6 @@
 import unittest
 
-from rules import (
+from dnd_manager.characters.common.rules import (
     ability_modifier,
     adjusted_current_hp,
     defense,
@@ -23,9 +23,10 @@ class RulesTestCase(unittest.TestCase):
         self.assertTrue(valid_point_buy(scores))
         self.assertFalse(valid_point_buy((15, 15, 13, 10, 10, 9)))
 
-    def test_point_buy_rejects_out_of_range_score(self):
+    def test_point_buy_accepts_extended_range_and_rejects_above_it(self):
+        self.assertEqual(point_buy_total((16, 8, 8, 8, 8, 8)), 11)
         with self.assertRaises(ValueError):
-            point_buy_total((16, 8, 8, 8, 8, 8))
+            point_buy_total((21, 8, 8, 8, 8, 8))
 
     def test_fixed_maximum_hp(self):
         self.assertEqual(maximum_hp(hit_die=8, level=1, constitution=14), 10)

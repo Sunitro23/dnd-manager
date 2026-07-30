@@ -1,50 +1,82 @@
 {% extends "base.html" %}
 {% block title %}Nouveau personnage · Gestionnaire JDR{% endblock %}
 {% block content %}
-  <div class="page-heading">
-    <p class="eyebrow">Création guidée</p>
+  <section class="form-panel">
+    <p class="eyebrow">Création rapide</p>
     <h1>Nouveau personnage</h1>
-    <a href="{{ url_for('main.paths_catalog') }}">Comparer les voies proposées</a>
-  </div>
 
-  {% if not classes or not species %}
-    <section class="empty-state">
-      <h2>Catalogues incomplets</h2>
-      <p>Vérifie le contenu de <code>game_data.json</code>, puis redémarre l’application.</p>
-    </section>
-  {% else %}
-    <form id="character-form" class="wizard" method="post"
-          data-has-server-values="{{ '1' if request.form else '0' }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if not classes or not species %}
+      <p>Le MJ doit d’abord ajouter au moins une classe et une espèce.</p>
+    {% else %}
+      <form id="character-form" method="post"
+            data-has-server-values="{{ '1' if request.form else '0' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <section class="wizard-section">
-        <p class="step-number">Étape 1 sur 5</p>
-        <h2>Identité</h2>
+        <div class="field-grid">
+          <div>
+            <label for="name">Personnage</label>
+            <input id="name" name="name" maxlength="80" required
+                   placeholder="Nom"
+                   value="{{ request.form.get('name', '') }}">
+          </div>
+          <div>
+            <label for="owner_name">Joueur</label>
+            <input id="owner_name" name="owner_name" maxlength="80" list="players"
+                   placeholder="Nom"
+                   value="{{ request.form.get('owner_name', '') }}">
+            <datalist id="players">
+              {% for player in players %}
+                <option value="{{ player['display_name'] }}">
+              {% endfor %}
+            </datalist>
+          </div>
+        </div>
 
-        <label for="name">Nom du personnage</label>
-        <input id="name" name="name" maxlength="80" required
-               value="{{ request.form.get('name', '') }}">
-
-        <label for="owner_name">Nom du joueur ou propriétaire</label>
-        <input id="owner_name" name="owner_name" maxlength="80"
-               list="players"
-               value="{{ request.form.get('owner_name', '') }}">
-        <datalist id="players">
-          {% for player in players %}
-            <option value="{{ player['display_name'] }}">
-          {% endfor %}
-        </datalist>
+        <div class="field-grid">
+          <div>
+            <label for="class_id">Classe</label>
+            <select id="class_id" name="class_id" required>
+              <option value="">Choisir</option>
+              {% for class_item in classes %}
+                <option value="{{ class_item['id'] }}"
+                        data-hit-die="{{ class_item['hit_die'] }}"
+                        {% for field in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'] %}
+                          data-{{ field }}-bonus="{{ class_item[field ~ '_bonus'] }}"
+                        {% endfor %}
+                        {% if request.form.get('class_id') == class_item['id']|string %}selected{% endif %}>
+                  {{ class_item["name"] }} ·
+                  {% if class_item["strength_bonus"] %}+{{ class_item["strength_bonus"] }} FOR
+                  {% elif class_item["dexterity_bonus"] %}+{{ class_item["dexterity_bonus"] }} DEX
+                  {% elif class_item["constitution_bonus"] %}+{{ class_item["constitution_bonus"] }} CON
+                  {% elif class_item["intelligence_bonus"] %}+{{ class_item["intelligence_bonus"] }} INT
+                  {% elif class_item["wisdom_bonus"] %}+{{ class_item["wisdom_bonus"] }} SAG
+                  {% elif class_item["charisma_bonus"] %}+{{ class_item["charisma_bonus"] }} CHA
+                  {% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="species_id">Espèce</label>
+            <select id="species_id" name="species_id" required>
+              <option value="">Choisir</option>
+              {% for species_item in species %}
+                <option value="{{ species_item['id'] }}"
+                        {% if request.form.get('species_id') == species_item['id']|string %}selected{% endif %}>
+                  {{ species_item["name"] }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
 
         {% if is_gm() %}
-          <div class="field-grid">
+          <div class="field-grid field-grid-three">
             <div>
               <label for="character_type">Type</label>
               <select id="character_type" name="character_type">
                 {% for type in character_types %}
-                  <option value="{{ type }}"
-                    {% if request.form.get('character_type', 'player') == type %}selected{% endif %}>
-                    {{ type }}
-                  </option>
+                  <option value="{{ type }}" {% if request.form.get('character_type', 'player') == type %}selected{% endif %}>{{ type }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -52,119 +84,43 @@
               <label for="visibility">Visibilité</label>
               <select id="visibility" name="visibility">
                 {% for visibility in visibilities %}
-                  <option value="{{ visibility }}"
-                    {% if request.form.get('visibility', 'campaign') == visibility %}selected{% endif %}>
-                    {{ visibility }}
-                  </option>
+                  <option value="{{ visibility }}" {% if request.form.get('visibility', 'campaign') == visibility %}selected{% endif %}>{{ visibility }}</option>
                 {% endfor %}
               </select>
             </div>
+            <div>
+              <label for="level">Niveau</label>
+              <input id="level" name="level" type="number" min="1" max="20"
+                     value="{{ request.form.get('level', '1') }}">
+            </div>
           </div>
         {% endif %}
-      </section>
 
-      <section class="wizard-section">
-        <p class="step-number">Étape 2 sur 5</p>
-        <h2>Classe</h2>
-        <label for="class_id">Classe</label>
-        <select id="class_id" name="class_id" required>
-          <option value="">Choisir une classe</option>
-          {% for class_item in classes %}
-            <option value="{{ class_item['id'] }}"
-                    data-hit-die="{{ class_item['hit_die'] }}"
-                    {% for field in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'] %}
-                      data-{{ field }}-bonus="{{ class_item[field ~ '_bonus'] }}"
-                    {% endfor %}
-                    {% if request.form.get('class_id') == class_item['id']|string %}selected{% endif %}>
-              {{ class_item["name"] }} · d{{ class_item["hit_die"] }}
-            </option>
-          {% endfor %}
-        </select>
-
-        <p class="field-note">
-          Les deux voies de cette classe resteront disponibles sur la fiche.
-        </p>
-
-        {% if is_gm() %}
-          <label for="level">Niveau initial</label>
-          <input id="level" name="level" type="number" min="1" max="20"
-                 value="{{ request.form.get('level', '1') }}">
-        {% else %}
-          <p class="field-note">Le personnage commence au niveau 1.</p>
-        {% endif %}
-      </section>
-
-      <section class="wizard-section">
-        <p class="step-number">Étape 3 sur 5</p>
-        <h2>Espèce</h2>
-        <label for="species_id">Espèce</label>
-        <select id="species_id" name="species_id" required>
-          <option value="">Choisir une espèce</option>
-          {% for species_item in species %}
-            <option value="{{ species_item['id'] }}"
-                    {% if request.form.get('species_id') == species_item['id']|string %}selected{% endif %}>
-              {{ species_item["name"] }}
-            </option>
-          {% endfor %}
-        </select>
-
-        <p class="field-note">
-          Les bonus de caractéristiques seront disponibles sur la fiche après
-          avoir débloqué le rang 1 de la voie raciale correspondante.
-        </p>
-      </section>
-
-      <section class="wizard-section">
-        <p class="step-number">Étape 4 sur 5</p>
-        <h2>Caractéristiques</h2>
         <p id="point-buy-status" class="budget-status" aria-live="polite">
           Points dépensés : <strong>0</strong> / 27
         </p>
         <div class="ability-grid">
-          {% set abilities = [
-            ('strength', 'Force'),
-            ('dexterity', 'Dextérité'),
-            ('constitution', 'Constitution'),
-            ('intelligence', 'Intelligence'),
-            ('wisdom', 'Sagesse'),
-            ('charisma', 'Charisme')
+          {% for field, label in [
+            ('strength', 'Force'), ('dexterity', 'Dextérité'),
+            ('constitution', 'Constitution'), ('intelligence', 'Intelligence'),
+            ('wisdom', 'Sagesse'), ('charisma', 'Charisme')
           ] %}
-          {% for field, label in abilities %}
             <label class="ability-field" for="{{ field }}">
               <span class="ability-label">
                 <i class="ds3-attribute-icon icon-{{ field }}" aria-hidden="true"></i>
                 {{ label }}
               </span>
               <input id="{{ field }}" name="{{ field }}" type="number"
-                     min="8" max="15" required
+                     min="4" max="20" required
                      value="{{ request.form.get(field, '8') }}">
               <small data-modifier-for="{{ field }}">−1</small>
             </label>
           {% endfor %}
         </div>
-      </section>
-
-      <section class="wizard-section">
-        <p class="step-number">Étape 5 sur 5</p>
-        <h2>Résumé</h2>
-        <div class="summary-grid">
-          <p><span>PV maximums</span><strong id="hp-preview">—</strong></p>
-          <p><span>Défense physique</span><strong id="physical-preview">−1</strong></p>
-          <p><span>Défense élémentaire</span><strong id="elemental-preview">−1</strong></p>
-          <p><span>Défense spirituelle</span><strong id="spiritual-preview">−1</strong></p>
-        </div>
-
-        <label for="description">Description</label>
-        <textarea id="description" name="description" maxlength="4000"
-                  rows="6">{{ request.form.get('description', '') }}</textarea>
-
-        <label for="personal_info">Informations personnelles</label>
-        <textarea id="personal_info" name="personal_info" maxlength="4000"
-                  rows="6">{{ request.form.get('personal_info', '') }}</textarea>
 
         <button id="create-character" type="submit">Créer le personnage</button>
-      </section>
-    </form>
-    <script src="{{ url_for('static', filename='character-create.js') }}"></script>
-  {% endif %}
+      </form>
+      <script src="{{ url_for('static', filename='character-create.js') }}"></script>
+    {% endif %}
+  </section>
 {% endblock %}

@@ -15,46 +15,74 @@ function modifier(score) {
 }
 
 function refreshAdminPreview() {
-  const scores = Object.fromEntries(
+  const scores = abilityScores();
+  const spent = pointBuyTotal(scores);
+  const health = previewHealth(scores);
+  renderPreview(spent, health);
+}
+
+function abilityScores() {
+  return Object.fromEntries(
     abilityNames.map((name) => [name, Number(document.getElementById(name).value)]),
   );
-  const spent = abilityNames.reduce(
-    (total, name) => total + (costs[scores[name]] ?? 99),
-    0,
-  );
+}
+
+function pointBuyTotal(scores) {
+  return abilityNames.reduce((total, name) => total + (costs[scores[name]] ?? 99), 0);
+}
+
+function previewHealth(scores) {
   const hitDie = Number(form.dataset.hitDie);
   const level = Number(document.getElementById("level").value);
-  const constitutionModifier = modifier(
-    scores.constitution
-      + Number(form.dataset.classConstitutionBonus || 0)
-      + (
-        document.getElementById("species_id").value === form.dataset.originalSpeciesId
-          ? Number(form.dataset.racialConstitutionBonus || 0)
-          : 0
-      ),
-  );
+  const constitutionModifier = modifier(effectiveConstitution(scores));
+  return maximumHealth(hitDie, level, constitutionModifier);
+}
+
+function maximumHealth(hitDie, level, constitutionModifier) {
   const firstLevel = Math.max(1, hitDie + constitutionModifier);
   const laterGain = Math.max(1, fixedGains[hitDie] + constitutionModifier);
   const newMaximum = firstLevel + (level - 1) * laterGain;
+  return adjustedHealth(newMaximum);
+}
+
+function effectiveConstitution(scores) {
+  const classBonus = Number(form.dataset.classConstitutionBonus || 0);
+  return scores.constitution + classBonus + racialConstitutionBonus();
+}
+
+function racialConstitutionBonus() {
+  const unchanged = document.getElementById("species_id").value === form.dataset.originalSpeciesId;
+  return unchanged ? Number(form.dataset.racialConstitutionBonus || 0) : 0;
+}
+
+function adjustedHealth(newMaximum) {
   const oldMaximum = Number(form.dataset.oldMaxHp);
   const currentHp = Number(form.dataset.currentHp);
-  const newCurrent = currentHp === oldMaximum
-    ? newMaximum
-    : Math.min(currentHp, newMaximum);
+  const newCurrent = adjustedCurrent(currentHp, oldMaximum, newMaximum);
+  return {currentHp, oldMaximum, newCurrent, newMaximum};
+}
 
+function adjustedCurrent(current, oldMaximum, newMaximum) {
+  return current === oldMaximum ? newMaximum : Math.min(current, newMaximum);
+}
+
+function renderPreview(spent, health) {
   const preview = document.getElementById("admin-character-preview");
   preview.textContent =
-    `Budget : ${spent}/27 · PV : ${currentHp}/${oldMaximum} → ${newCurrent}/${newMaximum}`;
+    `Budget : ${spent}/27 · PV : ${health.currentHp}/${health.oldMaximum} → ` +
+    `${health.newCurrent}/${health.newMaximum}`;
   preview.classList.toggle("is-valid", spent === 27);
 }
 
-for (const field of [
-  ...abilityNames,
-  "level",
-]) {
+function bindPreviewFields() {
+  for (const field of [...abilityNames, "level"]) bindPreviewField(field);
+}
+
+function bindPreviewField(field) {
   document.getElementById(field).addEventListener("input", refreshAdminPreview);
 }
 
+bindPreviewFields();
 refreshAdminPreview();
 
 document.getElementById("species_id").addEventListener("change", refreshAdminPreview);

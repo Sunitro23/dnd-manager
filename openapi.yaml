@@ -1,0 +1,607 @@
+openapi: 3.1.0
+info:
+  title: D&D Manager Character API
+  version: 1.0.0
+  description: |
+    API publique de synchronisation de fiches, sans gestion du combat.
+    Le mode Bearer peut être réactivé avec API_PUBLIC=false.
+servers:
+  - url: /api/v1
+security: []
+paths:
+  /:
+    get:
+      operationId: readApiCapabilities
+      summary: Découvrir les capacités et contrats de l’API
+      responses:
+        "200":
+          description: Liens disponibles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiCapabilities"
+  /openapi.yaml:
+    get:
+      operationId: readOpenApiContract
+      summary: Télécharger le contrat OpenAPI
+      responses:
+        "200":
+          description: Contrat OpenAPI 3.1
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /rulesets/current:
+    get:
+      operationId: readCurrentRuleset
+      summary: Lire le catalogue immuable destiné au moteur
+      responses:
+        "200":
+          description: Catalogue de règles normalisé
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineBundle"
+        "304":
+          description: Le catalogue local est toujours actuel
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /characters:
+    get:
+      operationId: listCharacters
+      summary: Lister les fiches disponibles pour synchronisation
+      responses:
+        "200":
+          description: Références stables des fiches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /characters/{character_id}:
+    get:
+      operationId: readCharacter
+      summary: Lire un instantané stable de la fiche
+      parameters:
+        - $ref: "#/components/parameters/CharacterId"
+      responses:
+        "200":
+          description: Fiche trouvée
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "304":
+          description: La fiche locale est toujours actuelle
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /characters/{character_id}/combat-profile:
+    get:
+      operationId: readCombatProfile
+      summary: Lire uniquement les données nécessaires au moteur de combat
+      parameters:
+        - $ref: "#/components/parameters/CharacterId"
+      responses:
+        "200":
+          description: Profil calculé avec les seules compétences débloquées
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CombatProfile"
+        "304":
+          description: Le profil local est toujours actuel
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /characters/{character_id}/health:
+    put:
+      operationId: synchronizeCharacterHealth
+      summary: Remplacer les PV courants avec contrôle de version
+      parameters:
+        - $ref: "#/components/parameters/CharacterId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HealthSyncCommand"
+      responses:
+        "200":
+          description: PV synchronisés
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSyncResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: La version fournie n’est plus actuelle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /characters/{character_id}/resources/{resource_key}:
+    put:
+      operationId: synchronizeCharacterResource
+      summary: Remplacer la dépense d’une ressource avec contrôle de version
+      parameters:
+        - $ref: "#/components/parameters/CharacterId"
+        - $ref: "#/components/parameters/ResourceKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceSyncCommand"
+      responses:
+        "200":
+          description: Ressource synchronisée
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceSyncResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: La version fournie n’est plus actuelle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    CharacterId:
+      name: character_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    ResourceKey:
+      name: resource_key
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    InvalidRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Jeton absent ou incorrect
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Personnage introuvable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unavailable:
+      description: Stockage temporairement indisponible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ApiCapabilities:
+      type: object
+      additionalProperties: false
+      required: [version, public, openapi, ruleset, characters, combat_profile]
+      properties:
+        version:
+          const: v1
+        public:
+          type: boolean
+        openapi:
+          type: string
+        ruleset:
+          type: string
+        characters:
+          type: string
+        combat_profile:
+          type: string
+    CombatFeature:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, activation, resource, description, resolution]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mode:
+          enum: [active, passive]
+        activation:
+          type: object
+        resource:
+          oneOf:
+            - type: object
+            - type: "null"
+        description:
+          type: string
+        resolution:
+          type: object
+    CombatCharacter:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - version
+        - name
+        - health
+        - movement
+        - abilities
+        - defenses
+        - equipment
+        - resources
+      properties:
+        id:
+          type: integer
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        health:
+          type: object
+          required: [current, maximum]
+          properties:
+            current:
+              type: integer
+            maximum:
+              type: integer
+        movement:
+          type: object
+          required: [size, speed]
+          properties:
+            size:
+              type: [string, "null"]
+            speed:
+              type: [integer, "null"]
+        abilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AbilityValue"
+        defenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefenseValue"
+        equipment:
+          type: array
+          items:
+            $ref: "#/components/schemas/EquipmentValue"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceValue"
+    CombatProfile:
+      type: object
+      additionalProperties: false
+      required: [schema_version, ruleset_revision, character, features]
+      properties:
+        schema_version:
+          const: 1.0.0
+        ruleset_revision:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        character:
+          $ref: "#/components/schemas/CombatCharacter"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/CombatFeature"
+    EngineBundle:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - revision
+        - ruleset
+        - definitions
+        - character_options
+        - coverage
+        - features
+      properties:
+        schema_version:
+          type: string
+        revision:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        ruleset:
+          type: object
+        definitions:
+          type: object
+        character_options:
+          type: object
+        coverage:
+          type: object
+        features:
+          type: array
+          items:
+            type: object
+    CharacterReference:
+      type: object
+      additionalProperties: false
+      required: [character_id, version, name, character_type]
+      properties:
+        character_id:
+          type: integer
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        character_type:
+          type: string
+          enum: [player, ally, npc, enemy]
+    CharacterList:
+      type: object
+      additionalProperties: false
+      required: [characters]
+      properties:
+        characters:
+          type: array
+          items:
+            $ref: "#/components/schemas/CharacterReference"
+    AbilityValue:
+      type: object
+      required: [key, score, modifier]
+      properties:
+        key:
+          type: string
+        score:
+          type: integer
+        modifier:
+          type: integer
+    ResourceValue:
+      type: object
+      required: [key, name, spent, maximum]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        spent:
+          type: integer
+          minimum: 0
+        maximum:
+          type: integer
+          minimum: 1
+    DefenseValue:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+          enum: [physical, elemental, spiritual]
+        value:
+          type: integer
+    DiceValue:
+      type: object
+      required: [count, sides]
+      properties:
+        count:
+          type: integer
+          minimum: 1
+        sides:
+          type: integer
+          minimum: 1
+    EquipmentValue:
+      type: object
+      required:
+        - equipment_id
+        - name
+        - item_type
+        - quantity
+        - slot
+        - damage_expression
+        - defense_bonuses
+        - ability_bonus
+        - effect_text
+      properties:
+        equipment_id:
+          type: integer
+        name:
+          type: string
+        item_type:
+          type: string
+        quantity:
+          type: integer
+        slot:
+          type: string
+        damage:
+          oneOf:
+            - $ref: "#/components/schemas/DiceValue"
+            - type: "null"
+        damage_expression:
+          type: string
+        damage_type:
+          type: [string, "null"]
+        defense_bonuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefenseValue"
+        ability:
+          type: [string, "null"]
+        ability_bonus:
+          type: integer
+        effect_text:
+          type: string
+    CharacterSnapshot:
+      type: object
+      required:
+        - character_id
+        - version
+        - name
+        - character_type
+        - level
+        - class_id
+        - species_id
+        - class_path_id
+        - racial_path_id
+        - size
+        - speed
+        - current_hp
+        - maximum_hp
+        - abilities
+        - base_defenses
+        - equipment
+        - feature_ids
+        - resources
+        - ruleset_revision
+      properties:
+        character_id:
+          type: integer
+        version:
+          type: integer
+        name:
+          type: string
+        character_type:
+          type: string
+          enum: [player, ally, npc, enemy]
+        level:
+          type: integer
+        class_id:
+          type: string
+        species_id:
+          type: string
+        class_path_id:
+          type: [string, "null"]
+        racial_path_id:
+          type: [string, "null"]
+        size:
+          type: [string, "null"]
+        speed:
+          type: [integer, "null"]
+        current_hp:
+          type: integer
+        maximum_hp:
+          type: integer
+        abilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AbilityValue"
+        base_defenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefenseValue"
+        equipment:
+          type: array
+          items:
+            $ref: "#/components/schemas/EquipmentValue"
+        feature_ids:
+          type: array
+          items:
+            type: string
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceValue"
+        ruleset_revision:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+    HealthSyncCommand:
+      type: object
+      additionalProperties: false
+      required: [current_hp, expected_version]
+      properties:
+        current_hp:
+          type: integer
+          minimum: 0
+        expected_version:
+          type: integer
+          minimum: 1
+    HealthSyncResult:
+      type: object
+      required: [character_id, version, current_hp, maximum_hp]
+      properties:
+        character_id:
+          type: integer
+        version:
+          type: integer
+        current_hp:
+          type: integer
+        maximum_hp:
+          type: integer
+    ResourceSyncCommand:
+      type: object
+      additionalProperties: false
+      required: [spent, expected_version]
+      properties:
+        spent:
+          type: integer
+          minimum: 0
+        expected_version:
+          type: integer
+          minimum: 1
+    ResourceSyncResult:
+      type: object
+      additionalProperties: false
+      required: [character_id, version, resource]
+      properties:
+        character_id:
+          type: integer
+        version:
+          type: integer
+          minimum: 1
+        resource:
+          $ref: "#/components/schemas/ResourceValue"
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [status, message]
+          properties:
+            status:
+              type: integer
+            message:
+              type: string

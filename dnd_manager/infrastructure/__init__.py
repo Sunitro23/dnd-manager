@@ -1,0 +1,1 @@
+"""Framework and persistence adapters."""

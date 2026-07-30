@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dnd-manager.local/schemas/engine-data-v1.json",
+  "type": "object",
+  "required": [
+    "schema_version", "revision", "ruleset", "definitions", "character_options",
+    "coverage", "features"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "revision": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "ruleset": {
+      "type": "object",
+      "required": ["id", "name", "version", "locale"]
+    },
+    "definitions": {
+      "type": "object",
+      "required": [
+        "abilities", "defenses", "damage_types", "rest_types", "rest_aliases",
+        "resources", "identifier_aliases", "units"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["total", "full", "partial", "reference"]
+    },
+    "character_options": {
+      "type": "object",
+      "required": ["classes", "species"],
+      "properties": {
+        "classes": {"type": "array"},
+        "species": {"type": "array"}
+      }
+    },
+    "features": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/feature"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "required": [
+        "id", "rank_id", "name", "mode", "owner", "activation",
+        "resource", "resolution"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "rank_id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "mode": {"enum": ["active", "passive"]},
+        "resolution": {
+          "type": "object",
+          "required": ["support", "operations"],
+          "properties": {
+            "support": {"enum": ["full", "partial", "reference"]},
+            "operations": {"type": "array"},
+            "facts": {"type": "object"},
+            "unstructured_rule": {"type": "string"},
+            "missing": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

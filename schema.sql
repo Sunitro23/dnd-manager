@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS character_class (
 
 CREATE TABLE IF NOT EXISTS species (
     id INTEGER PRIMARY KEY,
+    stable_key TEXT UNIQUE,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
     description TEXT NOT NULL DEFAULT '',
     traits TEXT NOT NULL DEFAULT '',
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS species (
 
 CREATE TABLE IF NOT EXISTS class_path (
     id INTEGER PRIMARY KEY,
+    stable_key TEXT UNIQUE,
     class_id INTEGER NOT NULL REFERENCES character_class(id) ON DELETE CASCADE,
     name TEXT NOT NULL COLLATE NOCASE,
     abilities TEXT NOT NULL DEFAULT '',
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS class_path (
 
 CREATE TABLE IF NOT EXISTS racial_path (
     id INTEGER PRIMARY KEY,
+    stable_key TEXT UNIQUE,
     species_id INTEGER NOT NULL REFERENCES species(id) ON DELETE CASCADE,
     name TEXT NOT NULL COLLATE NOCASE,
     abilities TEXT NOT NULL DEFAULT '',
@@ -61,6 +64,9 @@ CREATE TABLE IF NOT EXISTS racial_path (
     intelligence_bonus INTEGER NOT NULL DEFAULT 0,
     wisdom_bonus INTEGER NOT NULL DEFAULT 0,
     charisma_bonus INTEGER NOT NULL DEFAULT 0,
+    physical_bonus INTEGER NOT NULL DEFAULT 0,
+    elemental_bonus INTEGER NOT NULL DEFAULT 0,
+    spiritual_bonus INTEGER NOT NULL DEFAULT 0,
     configured INTEGER NOT NULL DEFAULT 0 CHECK (configured IN (0, 1)),
     UNIQUE (species_id, name)
 );
@@ -84,12 +90,12 @@ CREATE TABLE IF NOT EXISTS character (
     description TEXT NOT NULL DEFAULT '',
     personal_info TEXT NOT NULL DEFAULT '',
     portrait_filename TEXT,
-    strength INTEGER NOT NULL DEFAULT 8 CHECK (strength BETWEEN 8 AND 15),
-    dexterity INTEGER NOT NULL DEFAULT 8 CHECK (dexterity BETWEEN 8 AND 15),
-    constitution INTEGER NOT NULL DEFAULT 8 CHECK (constitution BETWEEN 8 AND 15),
-    intelligence INTEGER NOT NULL DEFAULT 8 CHECK (intelligence BETWEEN 8 AND 15),
-    wisdom INTEGER NOT NULL DEFAULT 8 CHECK (wisdom BETWEEN 8 AND 15),
-    charisma INTEGER NOT NULL DEFAULT 8 CHECK (charisma BETWEEN 8 AND 15),
+    strength INTEGER NOT NULL DEFAULT 8 CHECK (strength BETWEEN 4 AND 20),
+    dexterity INTEGER NOT NULL DEFAULT 8 CHECK (dexterity BETWEEN 4 AND 20),
+    constitution INTEGER NOT NULL DEFAULT 8 CHECK (constitution BETWEEN 4 AND 20),
+    intelligence INTEGER NOT NULL DEFAULT 8 CHECK (intelligence BETWEEN 4 AND 20),
+    wisdom INTEGER NOT NULL DEFAULT 8 CHECK (wisdom BETWEEN 4 AND 20),
+    charisma INTEGER NOT NULL DEFAULT 8 CHECK (charisma BETWEEN 4 AND 20),
     current_hp INTEGER NOT NULL DEFAULT 1,
     max_hp INTEGER NOT NULL DEFAULT 1 CHECK (max_hp > 0),
     estus_available INTEGER NOT NULL DEFAULT 1 CHECK (estus_available IN (0, 1)),

@@ -1,225 +1,101 @@
-const costs = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9};
-const fixedGains = {6: 4, 8: 5, 10: 6, 12: 7};
+const costs = {
+  4: -4, 5: -3, 6: -2, 7: -1, 8: 0, 9: 1, 10: 2, 11: 3,
+  12: 4, 13: 5, 14: 7, 15: 9, 16: 11, 17: 13, 18: 15, 19: 17, 20: 19,
+};
 const abilityNames = [
-  "strength",
-  "dexterity",
-  "constitution",
-  "intelligence",
-  "wisdom",
-  "charisma",
+  "strength", "dexterity", "constitution",
+  "intelligence", "wisdom", "charisma",
 ];
 const form = document.getElementById("character-form");
-const sections = [...form.querySelectorAll(".wizard-section")];
 const draftKey = "dnd-manager-character-draft";
-let currentStep = 0;
+
+const modifier = (score) => Math.floor((score - 10) / 2);
+const signed = (value) => (value >= 0 ? `+${value}` : `${value}`);
 
 function draftFields() {
   return [...form.elements].filter(
-    (field) =>
-      field.name &&
-      field.name !== "csrf_token" &&
+    (field) => field.name && field.name !== "csrf_token" &&
       !["submit", "button"].includes(field.type),
   );
 }
 
 function saveDraft() {
-  const values = {};
-  for (const field of draftFields()) {
-    values[field.name] = field.type === "checkbox" ? field.checked : field.value;
-  }
-  localStorage.setItem(draftKey, JSON.stringify({values, currentStep}));
+  const values = Object.fromEntries(draftFields().map((field) => [field.name, field.value]));
+  localStorage.setItem(draftKey, JSON.stringify(values));
 }
 
 function restoreDraft() {
-  if (form.dataset.hasServerValues === "1") {
-    return 0;
-  }
-  try {
-    const draft = JSON.parse(localStorage.getItem(draftKey));
-    if (!draft?.values) {
-      return 0;
-    }
-    for (const field of draftFields()) {
-      if (!(field.name in draft.values)) {
-        continue;
-      }
-      if (field.type === "checkbox") {
-        field.checked = Boolean(draft.values[field.name]);
-      } else {
-        field.value = draft.values[field.name];
-      }
-    }
-    return Number(draft.currentStep) || 0;
-  } catch {
+  if (form.dataset.hasServerValues === "1") return;
+  const values = readDraft();
+  if (values) applyDraft(values);
+}
+
+function readDraft() {
+  try { return JSON.parse(localStorage.getItem(draftKey)); } catch {
     localStorage.removeItem(draftKey);
-    return 0;
+    return null;
   }
 }
 
-const modifier = (score) => Math.floor((score - 10) / 2);
-const signed = (value) => (value >= 0 ? `+${value}` : `${value}`);
+function applyDraft(values) {
+  if (!values) return;
+  for (const field of draftFields()) {
+    if (field.name in values) field.value = values[field.name];
+  }
+}
 
-function refreshPreview() {
-  const scores = Object.fromEntries(
-    abilityNames.map((name) => [
-      name,
-      Number(document.getElementById(name).value),
-    ]),
-  );
-  const spent = abilityNames.reduce(
-    (total, name) => total + (costs[scores[name]] ?? 99),
+function refresh() {
+  abilityNames.forEach(refreshAbility);
+  renderBudget(pointBuyTotal());
+}
+
+function refreshAbility(name) {
+  const score = Number(document.getElementById(name).value);
+  const total = score + classBonus(name);
+  document.querySelector(`[data-modifier-for="${name}"]`).textContent =
+    `${total} · ${signed(modifier(total))}`;
+}
+
+function classBonus(name) {
+  const option = document.getElementById("class_id").selectedOptions[0];
+  return Number(option?.dataset[`${name}Bonus`] || 0);
+}
+
+function pointBuyTotal() {
+  return abilityNames.reduce(
+    (total, name) => total + (costs[Number(document.getElementById(name).value)] ?? 99),
     0,
   );
+}
+
+function renderBudget(spent) {
   const status = document.getElementById("point-buy-status");
   status.querySelector("strong").textContent = spent;
   status.classList.toggle("is-valid", spent === 27);
-
-  const classOption = document.getElementById("class_id").selectedOptions[0];
-  const classBonuses = Object.fromEntries(
-    abilityNames.map((name) => [
-      name,
-      Number(classOption?.dataset[`${name}Bonus`] || 0),
-    ]),
-  );
-  const hitDie = Number(classOption?.dataset.hitDie);
-  const racialBonuses = Object.fromEntries(
-    abilityNames.map((name) => [name, 0]),
-  );
-  for (const name of abilityNames) {
-    document.querySelector(`[data-modifier-for="${name}"]`).textContent =
-      signed(
-        modifier(
-          scores[name] + classBonuses[name] + racialBonuses[name],
-        ),
-      );
-  }
-  const levelInput = document.getElementById("level");
-  const level = levelInput ? Number(levelInput.value) : 1;
-  const constitutionModifier = modifier(
-    scores.constitution
-      + classBonuses.constitution
-      + racialBonuses.constitution,
-  );
-  if (fixedGains[hitDie]) {
-    const firstLevel = Math.max(1, hitDie + constitutionModifier);
-    const laterGain = Math.max(1, fixedGains[hitDie] + constitutionModifier);
-    document.getElementById("hp-preview").textContent =
-      firstLevel + (level - 1) * laterGain;
-  } else {
-    document.getElementById("hp-preview").textContent = "—";
-  }
-
-  document.getElementById("physical-preview").textContent =
-    signed(
-      modifier(
-        scores.constitution
-          + classBonuses.constitution
-          + racialBonuses.constitution,
-      ),
-    );
-  document.getElementById("elemental-preview").textContent =
-    signed(
-      modifier(
-        scores.intelligence
-          + classBonuses.intelligence
-          + racialBonuses.intelligence,
-      ),
-    );
-  document.getElementById("spiritual-preview").textContent =
-    signed(
-      modifier(
-        scores.wisdom
-          + classBonuses.wisdom
-          + racialBonuses.wisdom,
-      ),
-    );
 }
 
-for (const field of [
-  ...abilityNames,
-  "class_id",
-  "species_id",
-  "level",
-]) {
-  document.getElementById(field)?.addEventListener("input", refreshPreview);
-  document.getElementById(field)?.addEventListener("change", refreshPreview);
-}
+restoreDraft();
+form.addEventListener("input", refreshAndSave);
+form.addEventListener("change", refreshAndSave);
+form.addEventListener("submit", validateSubmission);
 
-
-function showStep(index) {
-  currentStep = Math.max(0, Math.min(index, sections.length - 1));
-  sections.forEach((section, sectionIndex) => {
-    section.hidden = sectionIndex !== currentStep;
-  });
-  sections[currentStep].scrollIntoView({behavior: "smooth", block: "start"});
+function refreshAndSave() {
+  refresh();
   saveDraft();
 }
 
-function currentStepIsValid() {
-  const fields = sections[currentStep].querySelectorAll(
-    "input:not([type='hidden']), select, textarea",
-  );
-  for (const field of fields) {
-    if (!field.reportValidity()) {
-      return false;
-    }
-  }
-  return true;
+function validateSubmission(event) {
+  SUBMISSION_HANDLERS[pointBuyTotal() === 27](event);
 }
 
-sections.forEach((section, index) => {
-  const controls = document.createElement("div");
-  controls.className = "wizard-controls";
+function rejectSubmission(event) {
+  event.preventDefault();
+  document.getElementById("point-buy-status").scrollIntoView({behavior: "smooth"});
+}
 
-  if (index > 0) {
-    const previous = document.createElement("button");
-    previous.type = "button";
-    previous.className = "button-secondary";
-    previous.textContent = "Étape précédente";
-    previous.addEventListener("click", () => showStep(index - 1));
-    controls.append(previous);
-  }
+function acceptSubmission() {
+  localStorage.removeItem(draftKey);
+}
 
-  if (index < sections.length - 1) {
-    const next = document.createElement("button");
-    next.type = "button";
-    next.textContent = "Étape suivante";
-    next.addEventListener("click", () => {
-      if (currentStepIsValid()) {
-        showStep(index + 1);
-      }
-    });
-    controls.append(next);
-  }
-
-  section.append(controls);
-});
-
-form.classList.add("wizard-enhanced");
-const restoredStep = restoreDraft();
-showStep(restoredStep);
-
-form.addEventListener("invalid", (event) => {
-  const invalidSection = event.target.closest(".wizard-section");
-  const invalidIndex = sections.indexOf(invalidSection);
-  if (invalidIndex >= 0 && invalidIndex !== currentStep) {
-    showStep(invalidIndex);
-  }
-}, true);
-
-form.addEventListener("submit", (event) => {
-  const spent = abilityNames.reduce(
-    (total, name) =>
-      total + (costs[Number(document.getElementById(name).value)] ?? 99),
-    0,
-  );
-  if (spent !== 27) {
-    event.preventDefault();
-    showStep(4);
-  }
-});
-
-form.addEventListener("input", saveDraft);
-form.addEventListener("change", saveDraft);
-
-refreshPreview();
+const SUBMISSION_HANDLERS = {true: acceptSubmission, false: rejectSubmission};
+refresh();
