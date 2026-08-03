@@ -281,6 +281,7 @@ components:
         - defenses
         - equipment
         - resources
+        - resistances
       properties:
         id:
           type: integer
@@ -321,6 +322,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ResourceValue"
+        resistances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResistanceValue"
     CombatProfile:
       type: object
       additionalProperties: false
@@ -593,6 +598,16 @@ components:
           minimum: 1
         resource:
           $ref: "#/components/schemas/ResourceValue"
+    ResistanceValue:
+      type: object
+      additionalProperties: false
+      required: [damage_type, level]
+      properties:
+        damage_type:
+          type: string
+        level:
+          type: string
+          enum: [resistance, vulnerability, immunity]
     ErrorResponse:
       type: object
       required: [error]

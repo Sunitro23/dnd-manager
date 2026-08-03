@@ -1,4 +1,5 @@
-"""Vérifie les invariants d'architecture que la relecture humaine laisse passer.
+"""
+Vérifie les invariants d'architecture que la relecture humaine laisse passer.
 
 Ce script était vide alors que `check.sh` l'exécutait : la CI affichait une
 vérification d'architecture qui ne vérifiait rien.

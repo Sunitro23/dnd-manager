@@ -15,6 +15,7 @@ from dnd_manager.characters.progression.contracts import (
     RacialBonusState,
     RankState,
 )
+from dnd_manager.paths.repository import find_path as find_canonical_path
 from dnd_manager.shared.errors import ConcurrentUpdate, InvalidRequest, RepositoryUnavailable
 
 FIND_PROGRESSION = f"""
@@ -202,16 +203,16 @@ def find_action_character(database, character_id, public_only):
 
 
 def find_action_path(database, character, command):
-    table, owner_column = PATHS[command.path_type]
-    query = f"SELECT ranks_json FROM {table} WHERE id = ? AND {owner_column} = ? AND configured = 1"
-    return database.execute(query, (command.path_id, character[owner_column])).fetchone()
+    path = find_canonical_path(database, command.path_type, command.path_id)
+    owner_column = PATHS[command.path_type][1]
+    return path if path and path[owner_column] == character[owner_column] else None
 
 
 def action_state(database, character, command, path):
     character_id = character["id"]
     if path is None or not action_unlocked(database, character_id, command):
         return ActionState(character_id, "", "", 0, False)
-    rank = rank_definition(path["ranks_json"], command.rank)
+    rank = rank_definition(path["ranks"], command.rank)
     active = rank.get("active") or {}
     resource = active.get("resource") or {}
     return ActionState(character_id, rank["name"], active.get("uses", ""),
@@ -220,8 +221,7 @@ def action_state(database, character, command, path):
                        action_modifiers(character), compiled_effects(active))
 
 
-def rank_definition(serialized_ranks, rank_number):
-    ranks = json.loads(serialized_ranks)
+def rank_definition(ranks, rank_number):
     if not 1 <= rank_number <= len(ranks):
         raise InvalidRequest("Cette capacité ne figure pas au catalogue de règles.")
     return ranks[rank_number - 1]

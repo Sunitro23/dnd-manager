@@ -1,4 +1,3 @@
-import json
 import re
 import sqlite3
 
@@ -10,6 +9,7 @@ from dnd_manager.character_api.contracts import (
     DiceValue,
     EquipmentValue,
     HealthSyncResult,
+    ResistanceValue,
     ResourceSyncResult,
     ResourceValue,
 )
@@ -69,6 +69,12 @@ LEFT JOIN character_action_use cau ON cau.character_id = cr.character_id
  AND cau.path_type = cr.path_type AND cau.path_id = cr.path_id AND cau.rank = cr.rank
 WHERE cr.character_id = ?
 """
+RESISTANCES_SQL = """
+SELECT damage_type, level, source
+FROM character_resistance
+WHERE character_id = ?
+ORDER BY damage_type, level
+"""
 UPDATE_HEALTH = """
 UPDATE character SET current_hp = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND version = ?
@@ -77,7 +83,6 @@ LIST_CHARACTERS = """
 SELECT id, version, name, character_type FROM character
 {visibility} ORDER BY name COLLATE NOCASE, id
 """
-PATH_TABLES = {"class": "class_path", "racial": "racial_path"}
 
 
 class SqliteCharacterExchangeRepository:
@@ -193,6 +198,11 @@ def equipment_defenses(row):
     return tuple(DefenseValue(key, value) for key, value in values if value)
 
 
+def load_resistances(database, character_id):
+    rows = database.execute(RESISTANCES_SQL, (character_id,)).fetchall()
+    return tuple(ResistanceValue(row["damage_type"], row["level"]) for row in rows)
+
+
 def load_unlocked_ranks(database, character_id):
     """Un seul parcours des rangs : les définitions de voies sont lues une fois chacune.
 
@@ -206,23 +216,59 @@ def load_unlocked_ranks(database, character_id):
 
 def path_definitions(database, rows):
     keys = {(row["path_type"], row["path_id"]) for row in rows}
-    return {key: json.loads(ranks_json(database, key)) for key in keys}
+    return {key: canonical_ranks(database, key) for key in keys}
 
 
-def ranks_json(database, key):
+def canonical_ranks(database, key):
     path_type, path_id = key
-    query = f"SELECT ranks_json FROM {PATH_TABLES[path_type]} WHERE id = ?"
-    row = database.execute(query, (path_id,)).fetchone()
-    if row is None:
+    query = (
+        "SELECT pd.stable_key AS path_key, pr.rank, pr.name, "
+        "pc.stable_key AS capability_key, pc.execution_mode, "
+        "pc.uses_maximum, pc.recharge "
+        "FROM path_definition pd JOIN path_rank pr ON pr.path_definition_id=pd.id "
+        "LEFT JOIN path_capability pc ON pc.path_rank_id=pr.id "
+        "WHERE pd.origin_type=? AND pd.legacy_path_id=? "
+        "ORDER BY pr.rank, pc.position, pc.id"
+    )
+    rows = database.execute(query, (path_type, path_id)).fetchall()
+    if not rows:
+        from dnd_manager.paths.repository import migrate_missing_legacy_paths
+        owner_table = "class_path" if path_type == "class" else "racial_path"
+        owner_column = "class_id" if path_type == "class" else "species_id"
+        owner = database.execute(
+            f"SELECT {owner_column} FROM {owner_table} WHERE id=?", (path_id,),
+        ).fetchone()
+        if owner:
+            migrate_missing_legacy_paths(database, path_type, owner[owner_column])
+            rows = database.execute(query, (path_type, path_id)).fetchall()
+    if not rows:
         raise InvalidRequest("Une voie débloquée ne figure plus au catalogue de règles.")
-    return row["ranks_json"]
+    ranks = {}
+    for item in rows:
+        rank = ranks.setdefault(item["rank"], {
+            "id": f"{item['path_key']}.rank-{item['rank']}", "rank": item["rank"],
+            "name": item["name"], "active": None, "passive": None,
+            "capability_ids": [],
+        })
+        if item["capability_key"] is None:
+            continue
+        rank["capability_ids"].append(item["capability_key"])
+        mode = "passive" if item["execution_mode"] == "permanent" else "active"
+        detail = {}
+        if mode == "active" and item["uses_maximum"]:
+            detail["resource"] = {
+                "id": f"{item['capability_key']}.uses",
+                "maximum": item["uses_maximum"], "recovery": [item["recharge"]],
+            }
+        rank[mode] = rank[mode] or detail
+    return ranks
 
 
 def rank_definition(definitions, row):
     ranks = definitions[(row["path_type"], row["path_id"])]
-    if not 1 <= row["rank"] <= len(ranks):
+    if row["rank"] not in ranks:
         raise InvalidRequest("Un rang débloqué ne figure plus au catalogue de règles.")
-    return ranks[row["rank"] - 1]
+    return ranks[row["rank"]]
 
 
 def resources(ranks):
@@ -235,6 +281,8 @@ def feature_ids(ranks):
 
 
 def rank_feature_ids(rank):
+    if "capability_ids" in rank:
+        return tuple(rank["capability_ids"])
     return tuple(f"{rank['id']}.{mode}" for mode in ("active", "passive") if rank.get(mode))
 
 

@@ -86,6 +86,12 @@
                href="{{ url_for('admin.character_edit', character_id=character['id']) }}">
               Modifier
             </a>
+            <form method="post"
+                  action="{{ url_for('admin.character_delete', character_id=character['id']) }}"
+                  data-confirm="Supprimer définitivement {{ character['name'] }} et toutes ses données ?">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="button-secondary" type="submit">Supprimer</button>
+            </form>
           </div>
         </article>
       {% endfor %}

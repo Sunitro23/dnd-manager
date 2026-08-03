@@ -1,8 +1,8 @@
-ABILITY_LABELS = {
-    "strength": "Force", "dexterity": "Dextérité", "constitution": "Constitution",
-    "intelligence": "Intelligence", "wisdom": "Sagesse", "charisma": "Charisme",
-}
+from dnd_manager.shared.catalog import ABILITY_LABELS
+
+
 STAT_LABELS = {
+    "defense.all": "toutes les Défenses",
     "defense.physical": "Défense physique",
     "defense.elemental": "Défense élémentaire",
     "defense.spiritual": "Défense spirituelle",

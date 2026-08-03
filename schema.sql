@@ -1,5 +1,10 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS campaign (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -70,6 +75,177 @@ CREATE TABLE IF NOT EXISTS racial_path (
     configured INTEGER NOT NULL DEFAULT 0 CHECK (configured IN (0, 1)),
     UNIQUE (species_id, name)
 );
+
+CREATE TABLE IF NOT EXISTS path_definition (
+    id INTEGER PRIMARY KEY,
+    stable_key TEXT NOT NULL UNIQUE,
+    origin_type TEXT NOT NULL CHECK (origin_type IN ('class', 'racial')),
+    origin_id INTEGER NOT NULL,
+    legacy_path_id INTEGER NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE,
+    abilities TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'published'
+        CHECK (status IN ('draft', 'published', 'archived')),
+    UNIQUE (origin_type, legacy_path_id)
+);
+
+CREATE TABLE IF NOT EXISTS path_rank_definition (
+    id INTEGER PRIMARY KEY,
+    path_definition_id INTEGER NOT NULL REFERENCES path_definition(id) ON DELETE CASCADE,
+    rank INTEGER NOT NULL CHECK (rank > 0),
+    name TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('active', 'passive')),
+    support TEXT NOT NULL CHECK (support IN ('manual', 'partial', 'full')),
+    activation TEXT,
+    frequency TEXT,
+    effect_manual TEXT NOT NULL DEFAULT '',
+    uses_maximum INTEGER,
+    recharge TEXT,
+    targeting_json TEXT NOT NULL DEFAULT '{"selector":"self"}',
+    trigger_json TEXT,
+    UNIQUE (path_definition_id, rank, mode)
+);
+
+CREATE TABLE IF NOT EXISTS path_operation (
+    id INTEGER PRIMARY KEY,
+    rank_definition_id INTEGER NOT NULL REFERENCES path_rank_definition(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    operation_type TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT 'selected',
+    parameters_json TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    UNIQUE (rank_definition_id, position)
+);
+
+-- Nouveau modèle de règles : un rang peut accorder plusieurs capacités.
+CREATE TABLE IF NOT EXISTS path_rank (
+    id INTEGER PRIMARY KEY,
+    path_definition_id INTEGER NOT NULL REFERENCES path_definition(id) ON DELETE CASCADE,
+    rank INTEGER NOT NULL CHECK (rank > 0),
+    name TEXT NOT NULL DEFAULT '',
+    unlock_level INTEGER,
+    unlock_note TEXT NOT NULL DEFAULT '',
+    UNIQUE (path_definition_id, rank)
+);
+
+CREATE TABLE IF NOT EXISTS path_capability (
+    id INTEGER PRIMARY KEY,
+    path_rank_id INTEGER NOT NULL REFERENCES path_rank(id) ON DELETE CASCADE,
+    stable_key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    execution_mode TEXT NOT NULL CHECK (
+        execution_mode IN ('manual', 'activated', 'triggered', 'permanent')
+    ),
+    action_cost TEXT NOT NULL DEFAULT 'none' CHECK (
+        action_cost IN ('action', 'bonus_action', 'reaction', 'free', 'none')
+    ),
+    structure_level TEXT NOT NULL CHECK (
+        structure_level IN ('manual', 'hybrid', 'structured')
+    ),
+    manual_description TEXT NOT NULL DEFAULT '',
+    trigger_event TEXT,
+    activation_limit TEXT,
+    uses_maximum INTEGER CHECK (uses_maximum IS NULL OR uses_maximum > 0),
+    recharge TEXT,
+    position INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
+    UNIQUE (path_rank_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS capability_target (
+    capability_id INTEGER PRIMARY KEY REFERENCES path_capability(id) ON DELETE CASCADE,
+    selection_mode TEXT NOT NULL DEFAULT 'none' CHECK (
+        selection_mode IN ('none', 'manual', 'automatic', 'area')
+    ),
+    minimum_targets INTEGER NOT NULL DEFAULT 0 CHECK (minimum_targets >= 0),
+    maximum_targets INTEGER CHECK (maximum_targets IS NULL OR maximum_targets > 0),
+    range_value REAL,
+    range_unit TEXT,
+    allegiance TEXT CHECK (allegiance IN ('ally', 'enemy', 'neutral', 'any')),
+    entity_type TEXT NOT NULL DEFAULT 'creature',
+    allow_self INTEGER NOT NULL DEFAULT 0 CHECK (allow_self IN (0, 1)),
+    requires_visibility INTEGER NOT NULL DEFAULT 1 CHECK (requires_visibility IN (0, 1)),
+    area_shape TEXT,
+    area_size REAL
+);
+
+CREATE TABLE IF NOT EXISTS capability_condition (
+    id INTEGER PRIMARY KEY,
+    capability_id INTEGER NOT NULL REFERENCES path_capability(id) ON DELETE CASCADE,
+    condition_scope TEXT NOT NULL CHECK (
+        condition_scope IN ('use', 'target', 'execution')
+    ),
+    condition_type TEXT NOT NULL,
+    subject_ref TEXT NOT NULL DEFAULT 'source',
+    operator TEXT,
+    value_text TEXT,
+    value_number REAL,
+    position INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (capability_id, condition_scope, position)
+);
+
+CREATE TABLE IF NOT EXISTS capability_resource (
+    id INTEGER PRIMARY KEY,
+    capability_id INTEGER NOT NULL REFERENCES path_capability(id) ON DELETE CASCADE,
+    resource_ref TEXT NOT NULL,
+    cost_type TEXT NOT NULL CHECK (cost_type IN ('fixed', 'dice', 'formula')),
+    fixed_value REAL,
+    dice_count INTEGER,
+    dice_sides INTEGER,
+    required INTEGER NOT NULL DEFAULT 1 CHECK (required IN (0, 1)),
+    position INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (capability_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS effect_node (
+    id INTEGER PRIMARY KEY,
+    capability_id INTEGER NOT NULL REFERENCES path_capability(id) ON DELETE CASCADE,
+    parent_id INTEGER REFERENCES effect_node(id) ON DELETE CASCADE,
+    node_type TEXT NOT NULL CHECK (
+        node_type IN ('sequence', 'condition', 'choice', 'for_each', 'repeat', 'operation', 'manual_effect')
+    ),
+    label TEXT NOT NULL DEFAULT '',
+    position INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (capability_id, parent_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS effect_operation (
+    node_id INTEGER PRIMARY KEY REFERENCES effect_node(id) ON DELETE CASCADE,
+    operation_type TEXT NOT NULL,
+    target_ref TEXT NOT NULL,
+    value_mode TEXT,
+    fixed_value REAL,
+    dice_count INTEGER,
+    dice_sides INTEGER,
+    resource_ref TEXT,
+    value_ref TEXT,
+    damage_type TEXT,
+    status_ref TEXT,
+    operation_mode TEXT,
+    distance_value REAL,
+    distance_unit TEXT,
+    duration_value INTEGER,
+    duration_unit TEXT,
+    expiration TEXT,
+    frequency TEXT,
+    condition_type TEXT,
+    description TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS status_definition (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    stacking_rule TEXT NOT NULL DEFAULT 'replace',
+    default_duration_value INTEGER,
+    default_duration_unit TEXT
+);
+
+INSERT OR IGNORE INTO status_definition (id,name,description,stacking_rule)
+VALUES
+    ('fear', 'Peur', 'État de peur défini par les règles de la campagne.', 'refresh'),
+    ('poisoned', 'Empoisonné', 'État de poison défini par les règles de la campagne.', 'refresh'),
+    ('immobilized', 'Immobilisé', 'La cible ne peut plus se déplacer.', 'replace'),
+    ('stable', 'Stable', 'La cible est stabilisée.', 'replace');
 
 CREATE TABLE IF NOT EXISTS character (
     id INTEGER PRIMARY KEY,
@@ -153,6 +329,9 @@ CREATE TABLE IF NOT EXISTS equipment (
 CREATE INDEX IF NOT EXISTS equipment_character
 ON equipment (character_id, equipped, name);
 
+CREATE UNIQUE INDEX IF NOT EXISTS equipment_slot_unique 
+ON equipment (character_id, slot) WHERE slot != '';
+
 CREATE TABLE IF NOT EXISTS login_attempt (
     id INTEGER PRIMARY KEY,
     ip_address TEXT NOT NULL,
@@ -161,5 +340,17 @@ CREATE TABLE IF NOT EXISTS login_attempt (
 
 CREATE INDEX IF NOT EXISTS login_attempt_ip_date
 ON login_attempt (ip_address, attempted_at);
+
+CREATE TABLE IF NOT EXISTS character_resistance (
+    id INTEGER PRIMARY KEY,
+    character_id INTEGER NOT NULL REFERENCES character(id) ON DELETE CASCADE,
+    damage_type TEXT NOT NULL,
+    level TEXT NOT NULL CHECK (level IN ('resistance', 'vulnerability', 'immunity')),
+    source TEXT NOT NULL DEFAULT 'base',
+    UNIQUE (character_id, damage_type, source)
+);
+
+CREATE INDEX IF NOT EXISTS character_resistance_lookup
+ON character_resistance (character_id, damage_type);
 
 INSERT OR IGNORE INTO campaign (id, name) VALUES (1, 'Notre campagne');

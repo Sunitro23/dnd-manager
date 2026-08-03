@@ -1,5 +1,5 @@
 from dnd_manager.automation.contracts import Dice, Formula
-from dnd_manager.automation.effects import DealDamage, Heal
+from dnd_manager.automation.effects import DealDamage, Heal, HealthCost
 from dnd_manager.shared.errors import InvalidRequest
 
 
@@ -18,10 +18,15 @@ def compile_heal(specification):
     return Heal(compile_formula(specification["value"]))
 
 
+def compile_health_cost(specification):
+    return HealthCost(compile_formula(specification["value"]))
+
+
 def compile_formula(specification):
     dice = specification["dice"]
     return Formula(Dice(dice["count"], dice["sides"]),
                    specification.get("ability_modifier"), specification.get("bonus", 0))
 
 
-BUILDERS = {"deal_damage": compile_damage, "heal": compile_heal}
+BUILDERS = {"deal_damage": compile_damage, "heal": compile_heal,
+            "health_cost": compile_health_cost}

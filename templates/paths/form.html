@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ "Modifier" if path else "Créer" }} une voie · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <section class="path-editor-page path-definition-page">
+    <p class="eyebrow">Administration MJ</p>
+    <h1>{{ "Modifier" if path else "Créer" }} une voie</h1>
+    <p class="field-note">Définis la voie et ses rangs ici, puis ajoute les capacités avec l’éditeur dédié.</p>
+
+    {% set selected_type = request.form.get('path_type', path['path_type'] if path else 'class') %}
+    <form method="post" data-path-definition-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <section class="form-panel path-definition-panel">
+        <div class="field-grid">
+          <div><label for="name">Nom de la voie</label><input id="name" name="name" maxlength="80" required value="{{ request.form.get('name', path['name'] if path else '') }}"></div>
+          <div><label for="path_type">Origine</label><select id="path_type" name="path_type" {% if path %}disabled{% endif %}>
+            <option value="class" {% if selected_type == 'class' %}selected{% endif %}>Voie de classe</option>
+            <option value="racial" {% if selected_type == 'racial' %}selected{% endif %}>Voie raciale</option>
+          </select></div>
+          {% if path %}<input type="hidden" name="path_type" value="{{ path['path_type'] }}">{% endif %}
+
+          <div data-owner-for="class">
+            <label for="class_id">Classe</label>
+            {% set selected_class = request.form.get('class_id', path['class_id'] if path and path['path_type'] == 'class' else '')|string %}
+            <select id="class_id" name="class_id"><option value="">Choisir une classe</option>{% for item in classes %}<option value="{{ item['id'] }}" {% if selected_class == item['id']|string %}selected{% endif %}>{{ item['name'] }}</option>{% endfor %}</select>
+          </div>
+          <div data-owner-for="racial">
+            <label for="species_id">Race</label>
+            {% set selected_species = request.form.get('species_id', path['species_id'] if path and path['path_type'] == 'racial' else '')|string %}
+            <select id="species_id" name="species_id"><option value="">Choisir une race</option>{% for item in races %}<option value="{{ item['id'] }}" {% if selected_species == item['id']|string %}selected{% endif %}>{{ item['name'] }}</option>{% endfor %}</select>
+          </div>
+          <div><label for="abilities">Caractéristiques principales</label><input id="abilities" name="abilities" maxlength="160" placeholder="FOR, CON ou +1 FOR, +1 SAG" value="{{ request.form.get('abilities', path['abilities'] if path else '') }}"></div>
+        </div>
+
+        <div class="operation-heading"><h2>Rangs</h2><small class="muted">Un rang peut accorder plusieurs capacités.</small></div>
+        <div class="rank-definition-list">
+          {% for number in range(1, 6) %}
+            {% set rank = path['ranks'][number - 1] if path and path['ranks']|length >= number and path['ranks'][number - 1]['rank'] == number else none %}
+            <article class="path-rank-editor">
+              <header class="operation-heading"><h3>Rang {{ number }}</h3>{% if path %}<a class="button button-secondary" href="{{ url_for('main.capability_create', path_type=path['path_type'], path_id=path['id'], rank=number) }}">Ajouter une capacité</a>{% endif %}</header>
+              <div class="field-grid field-grid-three">
+                <div><label for="rank_{{ number }}_name">Nom du rang</label><input id="rank_{{ number }}_name" name="rank_{{ number }}_name" maxlength="100" required value="{{ request.form.get('rank_' ~ number ~ '_name', rank['name'] if rank else '') }}"></div>
+                <div><label for="rank_{{ number }}_unlock_level">Niveau minimal</label><input id="rank_{{ number }}_unlock_level" name="rank_{{ number }}_unlock_level" type="number" min="1" placeholder="Aucun" value="{{ request.form.get('rank_' ~ number ~ '_unlock_level', rank.get('unlock_level', '') if rank else '') or '' }}"></div>
+                <div><label for="rank_{{ number }}_unlock_note">Autre condition</label><input id="rank_{{ number }}_unlock_note" name="rank_{{ number }}_unlock_note" placeholder="Aucune" value="{{ request.form.get('rank_' ~ number ~ '_unlock_note', rank.get('unlock_note', '') if rank else '') or '' }}"></div>
+              </div>
+              {% if path %}
+                <div class="rank-capability-list">
+                  {% for item in rank.get('capability_details', []) %}
+                    <article class="admin-list-item">
+                      <div><strong>{{ item['name'] }}</strong><small class="muted">{{ item['execution_mode'] }} · {{ item['execution_support'] }}</small></div>
+                      <div class="item-actions">
+                        <a class="button button-secondary" href="{{ url_for('main.capability_edit', path_type=path['path_type'], path_id=path['id'], rank=number, capability_id=item['id']) }}">Modifier</a>
+                        <button type="submit" class="button-secondary" formmethod="post" formaction="{{ url_for('main.capability_delete', path_type=path['path_type'], path_id=path['id'], capability_id=item['id']) }}">Supprimer</button>
+                      </div>
+                    </article>
+                  {% else %}<p class="muted">Aucune capacité pour ce rang.</p>{% endfor %}
+                </div>
+              {% else %}<p class="field-note">Enregistre d’abord la voie pour pouvoir ajouter ses capacités.</p>{% endif %}
+            </article>
+          {% endfor %}
+        </div>
+        <div class="form-actions"><button type="submit">Enregistrer la voie</button><a class="button button-secondary" href="{{ url_for('main.paths_catalog') }}">Fermer</a></div>
+      </section>
+    </form>
+  </section>
+  <script src="{{ url_for('static', filename='path-form.js') }}"></script>
+{% endblock %}

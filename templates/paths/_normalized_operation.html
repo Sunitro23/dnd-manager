@@ -1,0 +1,72 @@
+<article class="operation-editor" data-normalized-operation>
+  <header>
+    <strong>Effet <span data-effect-number>{{ index + 1 if index is number else '' }}</span> — <span data-effect-title>Effet</span></strong>
+    <button type="button" class="button-danger-quiet" data-remove-normalized-operation>Supprimer</button>
+  </header>
+  {% set prefix = 'operation_' ~ index ~ '_' %}
+  {% set selected_type = request.form.get(prefix ~ 'type', operation.get('operation_type', 'damage')) %}
+  {% set raw_fixed = request.form.get(prefix ~ 'fixed_value', operation.get('fixed_value', '')) %}
+  {% set fixed_number = raw_fixed|float if raw_fixed not in ('', none) else none %}
+  {% set displayed_fixed = fixed_number|int if fixed_number is not none and fixed_number == fixed_number|int else raw_fixed %}
+  {% set negative_fixed = fixed_number is not none and fixed_number < 0 %}
+  <div class="field-grid">
+    <div><label>Que fait cet effet ?</label><select name="{{ prefix }}type" data-operation-type>
+      {% for value, label in [('damage','Infliger des dégâts'),('heal','Restaurer des PV'),('health_cost','Faire payer des PV'),('health_floor','Empêcher les PV de descendre sous une valeur'),('temporary_health','Accorder des PV temporaires'),('modify_attack_damage','Ajouter des dégâts aux attaques'),('modify_value','Modifier une statistique'),('apply_status','Appliquer un état'),('remove_status','Retirer un état'),('reduce_damage','Réduire les dégâts reçus'),('grant_immunity','Accorder une immunité'),('ignore_defense','Ignorer une Défense'),('reflect_damage','Renvoyer des dégâts'),('move','Déplacer'),('extra_attack','Accorder une attaque supplémentaire'),('manual_effect','Ajouter une règle particulière')] %}<option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+    <div><label>Qui reçoit cet effet ?</label><select name="{{ prefix }}target_ref">
+      {% set selected = request.form.get(prefix ~ 'target_ref', operation.get('target_ref', 'source')) %}
+      {% for value, label in [('source','L’utilisateur'),('target.primary','La cible principale'),('target.all','Toutes les cibles'),('target.allies','Les alliés'),('target.enemies','Les ennemis'),('trigger.source','L’auteur du déclenchement'),('trigger.target','La cible du déclenchement'),('area.entities','Les créatures dans la zone'),('summon.created','La créature invoquée')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+  </div>
+
+  <div class="field-grid field-grid-three" data-fields-for="damage heal health_cost temporary_health modify_attack_damage reduce_damage reflect_damage">
+    <div><label>Nombre de dés</label><input name="{{ prefix }}dice_count" type="number" min="1" value="{{ request.form.get(prefix ~ 'dice_count', operation.get('dice_count', '')) or '' }}"></div>
+    <div><label>Faces par dé</label><select name="{{ prefix }}dice_sides">{% set selected = request.form.get(prefix ~ 'dice_sides', operation.get('dice_sides', 6))|string %}{% for value in [4,6,8,10,12,20] %}<option value="{{ value }}" {% if selected == value|string %}selected{% endif %}>d{{ value }}</option>{% endfor %}</select></div>
+    <div><label>Bonus fixe</label><input name="{{ prefix }}fixed_value" type="number" step="1" value="{{ displayed_fixed if displayed_fixed is not none else '' }}"></div>
+  </div>
+
+  <div class="field-grid" data-fields-for="damage modify_attack_damage">
+    <div><label>Type de dégâts</label><select name="{{ prefix }}damage_type">{% set selected = request.form.get(prefix ~ 'damage_type', operation.get('damage_type', 'physical')) %}{% for value,label in [('physical','Physiques'),('elemental','Élémentaires'),('spiritual','Spirituels'),('fire','Feu'),('ice','Glace'),('lightning','Foudre'),('light','Lumière'),('dark','Ténèbres'),('magic','Magiques'),('poison','Poison')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  </div>
+
+  <div class="field-grid" data-fields-for="heal health_cost temporary_health">
+    <div><label>Ressource concernée</label><select name="{{ prefix }}resource_ref">{% set selected = request.form.get(prefix ~ 'resource_ref', operation.get('resource_ref', 'health')) %}{% for value,label in [('health','Points de vie'),('humanity','Humanité'),('mana','Mana'),('path_resource','Ressource propre à la voie')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  </div>
+
+  <div class="field-grid field-grid-three" data-fields-for="health_floor modify_value ignore_defense extra_attack">
+    <div data-fields-for="modify_value"><label>Statistique modifiée</label><select name="{{ prefix }}value_ref">
+      {% set selected = request.form.get(prefix ~ 'value_ref', operation.get('value_ref', '')) or '' %}
+      {% for value, label in [('', 'Choisir une valeur'),('defense.all','Toutes les Défenses'),('defense.physical','Défense physique'),('defense.elemental','Défense élémentaire'),('defense.spiritual','Défense spirituelle'),('movement.walk','Déplacement à pied'),('initiative.bonus','Initiative'),('saving_throw.strength','Sauvegarde de Force'),('saving_throw.dexterity','Sauvegarde de Dextérité'),('saving_throw.constitution','Sauvegarde de Constitution'),('saving_throw.intelligence','Sauvegarde d’Intelligence'),('saving_throw.wisdom','Sauvegarde de Sagesse'),('saving_throw.charisma','Sauvegarde de Charisme'),('saving_throw.all','Toutes les sauvegardes'),('health.current','Points de vie actuels'),('attack.damage','Dégâts d’attaque')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+    <div data-fields-for="modify_value"><label>Modification</label><select name="{{ prefix }}operation_mode" data-operation-mode>{% set stored_mode = request.form.get(prefix ~ 'operation_mode', operation.get('operation_mode', 'add')) %}{% set selected = 'subtract' if selected_type == 'modify_value' and stored_mode == 'add' and negative_fixed else stored_mode %}{% for value,label in [('add','Ajouter'),('subtract','Retirer'),('set','Fixer'),('minimum','Définir un minimum'),('maximum','Définir un maximum'),('override','Remplacer temporairement'),('multiply','Multiplier'),('grant_advantage','Accorder un avantage'),('grant_disadvantage','Imposer un désavantage')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label>{% if selected_type == 'extra_attack' %}Nombre d’attaques{% elif selected_type == 'health_floor' %}Minimum de PV{% else %}Valeur{% endif %}</label><input name="{{ prefix }}fixed_value" data-effect-value type="number" min="0" step="1" value="{{ (fixed_number|abs|int) if selected_type == 'modify_value' and negative_fixed else displayed_fixed if displayed_fixed is not none else '' }}"></div>
+  </div>
+
+  <div class="field-grid" data-fields-for="apply_status remove_status grant_immunity">
+    <div><label>{% if selected_type == 'remove_status' %}État retiré{% elif selected_type == 'grant_immunity' %}Immunité accordée{% else %}État appliqué{% endif %}</label><select name="{{ prefix }}status_ref">{% set selected = request.form.get(prefix ~ 'status_ref', operation.get('status_ref', '')) %}{% for value,label in [('', 'Choisir un état'),('fear','Peur'),('poisoned','Empoisonné'),('immobilized','Immobilisé'),('stable','Stable')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  </div>
+
+  <div class="field-grid" data-fields-for="move">
+    <div><label>Distance en mètres</label><input name="{{ prefix }}distance_value" type="number" min="0" step="0.5" value="{{ request.form.get(prefix ~ 'distance_value', operation.get('distance_value', '')) or '' }}"></div>
+  </div>
+
+  <div class="field-grid" data-fields-for="damage heal temporary_health modify_attack_damage modify_value apply_status reduce_damage grant_immunity move extra_attack">
+    <div><label>Durée</label><input name="{{ prefix }}duration_value" type="number" min="1" value="{{ request.form.get(prefix ~ 'duration_value', operation.get('duration_value', '')) or '' }}"></div>
+    <div><label>Mesurée en</label><select name="{{ prefix }}duration_unit">{% set selected = request.form.get(prefix ~ 'duration_unit', operation.get('duration_unit', 'turn')) %}<option value="turn" {% if selected == 'turn' %}selected{% endif %}>Tours de Joueur</option><option value="round" {% if selected == 'round' %}selected{% endif %}>Tours Globaux</option></select></div>
+    <div><label>Expiration</label><select name="{{ prefix }}expiration">{% set selected = request.form.get(prefix ~ 'expiration', operation.get('expiration', '')) or '' %}{% for value,label in [('', 'Automatique'),('end_of_source_turn','Fin du tour de l’utilisateur'),('start_of_source_turn','Début du tour de l’utilisateur'),('end_of_target_turn','Fin du tour de la cible'),('start_of_target_turn','Début du tour de la cible'),('end_of_combat','Fin du combat'),('condition_ends','Quand la condition disparaît')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  </div>
+
+  <div data-fields-for="manual_effect">
+    <label>Règle particulière</label><textarea name="{{ prefix }}description" rows="3" placeholder="Décris uniquement ce que le système ne peut pas représenter.">{{ request.form.get(prefix ~ 'description', operation.get('description', operation.get('label', ''))) or '' }}</textarea>
+  </div>
+
+  <p class="operation-preview"><strong>Aperçu :</strong> <span data-operation-preview>Complète les paramètres de l’effet.</span></p>
+
+  <details class="operation-advanced" data-fields-for="damage heal health_cost temporary_health modify_attack_damage modify_value apply_status reduce_damage grant_immunity move extra_attack">
+    <summary>Conditions et options avancées <span data-advanced-summary></span></summary>
+    <div class="field-grid">
+      <div><label>Rythme</label><select name="{{ prefix }}frequency">{% set selected = request.form.get(prefix ~ 'frequency', operation.get('frequency', '')) or '' %}{% for value,label in [('', 'Une seule fois'),('once_per_turn','Une fois par tour de joueur'),('each_attack','À chaque attaque'),('first_attack','À la première attaque'),('next_attack','À la prochaine attaque')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div><label>Condition particulière</label><select name="{{ prefix }}condition_type">{% set selected = request.form.get(prefix ~ 'condition_type', operation.get('condition_type', '')) or '' %}{% for value,label in [('', 'Aucune'),('shield_equipped','Bouclier équipé'),('incoming_attack','Uniquement contre l’attaque déclenchante'),('weapon_equipped','Arme équipée'),('target_poisoned','Cible empoisonnée'),('damage_dealt','L’attaque a infligé des dégâts')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    </div>
+  </details>
+</article>

@@ -1,4 +1,3 @@
-import json
 import sqlite3
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
@@ -11,7 +10,13 @@ from dnd_manager.characters.common.rules import (
 )
 from dnd_manager.characters.creation.form import catalogue_options, character_values
 from dnd_manager.characters.sheet.presentation import render_character_sheet
+from dnd_manager.campaign.path_editor import PATH_TYPES, find_path, path_from_form, persist_path
+from dnd_manager.campaign.capability_editor import capability_values
 from dnd_manager.infrastructure.database import get_db
+from dnd_manager.paths.repository import list_paths
+from dnd_manager.paths.normalized import (
+    delete_capability, find_capability, save_capability, update_rank_metadata,
+)
 from dnd_manager.shared.catalog import CHARACTER_TYPES, VISIBILITIES
 from dnd_manager.shared.errors import ApplicationError
 
@@ -24,14 +29,18 @@ FROM character c LEFT JOIN player p ON p.id = c.owner_id
 {where_clause} ORDER BY c.visibility, c.name COLLATE NOCASE
 """
 PATH_QUERIES = {
-    "classes": "SELECT id, name, hit_die FROM character_class "
+    "classes": "SELECT cc.id, cc.name, cc.description, cc.hit_die, "
+               "(SELECT COUNT(*) FROM path_definition pd "
+               " WHERE pd.origin_type = 'class' AND pd.origin_id = cc.id "
+               " AND pd.status = 'published') AS path_count "
+               "FROM character_class cc "
                "WHERE configured = 1 ORDER BY name COLLATE NOCASE",
-    "races": "SELECT id, name, traits, physical_bonus, elemental_bonus, spiritual_bonus "
-             "FROM species WHERE configured = 1 ORDER BY name COLLATE NOCASE",
-    "class_paths": "SELECT * FROM class_path WHERE configured = 1 "
-                   "ORDER BY class_id, name COLLATE NOCASE",
-    "racial_paths": "SELECT * FROM racial_path WHERE configured = 1 "
-                    "ORDER BY species_id, name COLLATE NOCASE",
+    "races": "SELECT s.id, s.name, s.description, s.traits, "
+             "s.physical_bonus, s.elemental_bonus, "
+             "s.spiritual_bonus, (SELECT COUNT(*) FROM path_definition pd "
+             " WHERE pd.origin_type = 'racial' AND pd.origin_id = s.id "
+             " AND pd.status = 'published') AS path_count "
+             "FROM species s WHERE configured = 1 ORDER BY name COLLATE NOCASE",
 }
 CAMPAIGN_CHARACTERS_SQL = """
 SELECT c.id, c.name, c.character_type, c.level, c.current_hp, c.max_hp,
@@ -48,19 +57,113 @@ ORDER BY c.name COLLATE NOCASE
 
 @bp.get("/voies")
 def paths_catalog():
-    context = path_context(get_db())
-    context["class_paths"] = decoded_paths(context["class_paths"])
-    context["racial_paths"] = decoded_paths(context["racial_paths"])
+    database = get_db()
+    context = path_context(database)
     return render_template("paths/index.html", **context)
 
 
+@bp.route("/mj/voies/nouvelle", methods=("GET", "POST"))
+@gm_required
+def path_create():
+    return path_form_response()
+
+
+@bp.route("/mj/voies/<path_type>/<int:path_id>/modifier", methods=("GET", "POST"))
+@gm_required
+def path_edit(path_type, path_id):
+    path = find_path(get_db(), path_type, path_id)
+    if path is None:
+        return ("Voie introuvable.", 404)
+    return path_form_response(path, path_id)
+
+
+@bp.route("/mj/voies/<path_type>/<int:path_id>/rangs/<int:rank>/capacites/nouvelle",
+          methods=("GET", "POST"))
+@gm_required
+def capability_create(path_type, path_id, rank):
+    path = find_path(get_db(), path_type, path_id)
+    if path is None or not 1 <= rank <= 5:
+        return ("Voie ou rang introuvable.", 404)
+    return capability_form_response(path, rank)
+
+
+@bp.route("/mj/voies/<path_type>/<int:path_id>/rangs/<int:rank>/capacites/<int:capability_id>",
+          methods=("GET", "POST"))
+@gm_required
+def capability_edit(path_type, path_id, rank, capability_id):
+    path = find_path(get_db(), path_type, path_id)
+    if path is None or not 1 <= rank <= 5:
+        return ("Voie ou rang introuvable.", 404)
+    capability = find_capability(get_db(), path["definition_id"], capability_id)
+    if capability is None or capability["rank"] != rank:
+        return ("Capacité introuvable.", 404)
+    detail = next((item for item in path["ranks"][rank - 1]["capability_details"]
+                   if item["id"] == capability_id), None)
+    return capability_form_response(path, rank, detail)
+
+
+@bp.post("/mj/voies/<path_type>/<int:path_id>/capacites/<int:capability_id>/supprimer")
+@gm_required
+def capability_delete(path_type, path_id, capability_id):
+    validate_csrf()
+    path = find_path(get_db(), path_type, path_id)
+    if path is None or not delete_capability(get_db(), path["definition_id"], capability_id):
+        return ("Capacité introuvable.", 404)
+    flash("Capacité supprimée.", "success")
+    return redirect(url_for("main.path_edit", path_type=path_type, path_id=path_id))
+
+
+def capability_form_response(path, rank, capability=None):
+    if request.method == "POST":
+        validate_csrf()
+        try:
+            values = capability_values(request.form, path["stable_key"])
+            capability_id = save_capability(
+                get_db(), path["definition_id"], rank, values,
+                capability["id"] if capability else None,
+            )
+            flash("Capacité enregistrée dans le nouveau système.", "success")
+            return redirect(url_for(
+                "main.capability_edit", path_type=path["path_type"], path_id=path["id"],
+                rank=rank, capability_id=capability_id,
+            ))
+        except (ApplicationError, ValueError, sqlite3.IntegrityError) as error:
+            get_db().rollback()
+            flash(str(error), "error")
+    return render_template("paths/capability_form.html", path=path, rank=rank,
+                           capability=capability)
+
+
+def path_form_response(path=None, path_id=None):
+    database = get_db()
+    if request.method == "POST":
+        validate_csrf()
+        try:
+            values = path_from_form(request.form)
+            if path is not None and values["path_type"] != path["path_type"]:
+                raise ApplicationError("Le type d’une voie existante ne peut pas être changé.")
+            saved_id = persist_path(database, values, path_id)
+            saved_path = find_path(database, values["path_type"], saved_id)
+            update_rank_metadata(database, saved_path["definition_id"], values["ranks"], request.form)
+            flash("Voie enregistrée.", "success")
+            return redirect(url_for("main.path_edit", path_type=values["path_type"],
+                                    path_id=saved_id))
+        except (ApplicationError, ValueError, sqlite3.IntegrityError) as error:
+            database.rollback()
+            message = ("Une voie de ce nom existe déjà pour ce choix."
+                       if isinstance(error, sqlite3.IntegrityError) else str(error))
+            flash(message, "error")
+    context = path_context(database)
+    return render_template("paths/form.html", path=path, classes=context["classes"],
+                           races=context["races"], path_types=PATH_TYPES)
+
+
 def path_context(database):
-    return {name: database.execute(query).fetchall()
-            for name, query in PATH_QUERIES.items()}
-
-
-def decoded_paths(paths):
-    return [{**dict(path), "ranks": json.loads(path["ranks_json"])} for path in paths]
+    context = {name: database.execute(query).fetchall()
+               for name, query in PATH_QUERIES.items() if name in {"classes", "races"}}
+    context["class_paths"] = list_paths(database, "class")
+    context["racial_paths"] = list_paths(database, "racial")
+    return context
 
 
 @bp.get("/")

@@ -93,7 +93,7 @@ def validate_formula(feature_id, formula):
 
 def validate_modifier(feature_id, operation):
     stat = operation.get("stat")
-    if stat not in {"defense.physical", "defense.elemental", "defense.spiritual",
+    if stat not in {"defense.all", "defense.physical", "defense.elemental", "defense.spiritual",
                     "movement.speed", "initiative", "saving_throw.all"}:
         raise InvalidRequest(f"Statistique invalide pour {feature_id}.")
     if not isinstance(operation.get("value"), int) or isinstance(operation["value"], bool):

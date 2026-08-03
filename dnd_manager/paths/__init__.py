@@ -1,0 +1,1 @@
+"""Modèle canonique des voies."""

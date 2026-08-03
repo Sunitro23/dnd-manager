@@ -1,7 +1,8 @@
 from flask import Blueprint, current_app, jsonify, request, send_file
 
 from dnd_manager.api_access import authentication_required, token_is_valid
-from dnd_manager.ruleset.catalog import JsonRulesetCatalog
+from dnd_manager.infrastructure.database import get_db
+from dnd_manager.ruleset.sqlite_catalog import SqliteRulesetCatalog
 from dnd_manager.shared.errors import RepositoryUnavailable
 
 bp = Blueprint("ruleset_api", __name__, url_prefix="/api/v1")
@@ -47,4 +48,4 @@ def ruleset_response(bundle):
 
 
 def catalog():
-    return JsonRulesetCatalog(current_app.config["ENGINE_DATA_PATH"])
+    return SqliteRulesetCatalog(get_db())

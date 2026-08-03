@@ -1,16 +1,20 @@
 from dataclasses import asdict
+from dnd_manager.character_api.sqlite_repository import load_resistances
 
 
-def build_combat_profile(snapshot, bundle):
+def build_combat_profile(snapshot, bundle, database):
+    # Charger les données de combat supplémentaires
+    resistances = load_resistances(database, snapshot.character_id)
+    
     return {
         "schema_version": "1.0.0",
         "ruleset_revision": bundle["revision"],
-        "character": character_values(snapshot),
+        "character": character_values(snapshot, resistances),
         "features": unlocked_features(snapshot.feature_ids, bundle["features"]),
     }
 
 
-def character_values(snapshot):
+def character_values(snapshot, resistances):
     return {
         "id": snapshot.character_id, "version": snapshot.version, "name": snapshot.name,
         "health": {"current": snapshot.current_hp, "maximum": snapshot.maximum_hp},
@@ -19,6 +23,7 @@ def character_values(snapshot):
         "defenses": serialized(snapshot.base_defenses),
         "equipment": serialized(snapshot.equipment),
         "resources": serialized(snapshot.resources),
+        "resistances": serialized(resistances),
     }
 
 

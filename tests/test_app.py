@@ -57,6 +57,23 @@ class ApplicationTestCase(unittest.TestCase):
             follow_redirects=True,
         )
 
+    def path_form(self, path_type="class", owner_id=1, name="Voie des braises"):
+        values = {
+            "csrf_token": self.csrf_token(), "path_type": path_type,
+            "class_id" if path_type == "class" else "species_id": str(owner_id),
+            "name": name,
+            "abilities": "FOR, CON" if path_type == "class" else "+1 FOR, +1 SAG",
+        }
+        for rank in range(1, 6):
+            values.update({
+                f"rank_{rank}_name": f"Braise {rank}",
+                f"rank_{rank}_mode": "active" if rank == 1 else "passive",
+                f"rank_{rank}_effect": f"Effet du rang {rank}.",
+                f"rank_{rank}_timing": "Action", f"rank_{rank}_uses": "1/combat",
+                f"rank_{rank}_frequency": "Permanent",
+            })
+        return values
+
     def create_catalogues(self):
         with self.app.app_context():
             from dnd_manager.infrastructure.database import get_db
@@ -311,7 +328,7 @@ class ApplicationTestCase(unittest.TestCase):
 
     def character_with_api_resource(self):
         character_id = self.create_public_character()
-        resource_key = "path.test.rank-1.uses"
+        resource_key = "path.test.rank-1.active.uses"
         with self.app.app_context():
             path_id = self.insert_api_resource_path(character_id, resource_key)
             self.unlock_api_resource(character_id, path_id)
@@ -366,18 +383,225 @@ class ApplicationTestCase(unittest.TestCase):
         response = self.client.get("/voies")
         page = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Les deux voies de chaque classe", page)
+        self.assertIn("Voies de chaque classe", page)
         self.assertIn("Rempart", page)
         self.assertIn("Berserker", page)
-        self.assertIn("Les deux voies de chaque race", page)
+        self.assertIn("Voies de chaque race", page)
         self.assertIn("Dieu solaire", page)
         self.assertIn("Dieu occulte", page)
         self.assertEqual(page.count("Voie de classe</p>"), 14)
         self.assertEqual(page.count("Voie raciale</p>"), 24)
         self.assertNotIn("Murkmans", page)
+        self.assertIn("<strong>Fureur écarlate</strong>", page)
+        self.assertNotIn("<strong>Rang 1</strong>", page)
+        self.assertIn("Les Chevaliers sont des combattants formés", page)
+        self.assertIn("Les Dieux descendent des puissances", page)
+        self.assertIn('<ul class="path-effect-list">', page)
+        self.assertIn("Le personnage réduit toutes ses Défenses de 2", page)
+        self.assertIn('<li>Attaque tous les ennemis adjacents', page)
+
+    def test_path_creator_requires_gm_access(self):
+        response = self.client.get("/mj/voies/nouvelle")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/mj/connexion", response.headers["Location"])
+
+    def test_gm_can_create_and_edit_a_class_path(self):
+        self.login()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            class_id = get_db().execute(
+                "SELECT id FROM character_class WHERE configured = 1 LIMIT 1"
+            ).fetchone()["id"]
+        response = self.client.post("/mj/voies/nouvelle",
+                                    data=self.path_form(owner_id=class_id))
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            path = get_db().execute(
+                "SELECT * FROM class_path WHERE name = 'Voie des braises'"
+            ).fetchone()
+            ranks = json.loads(path["ranks_json"])
+            self.assertEqual((path["class_id"], path["configured"]), (class_id, 1))
+            self.assertIsNone(path["stable_key"])
+            self.assertEqual(len(ranks), 5)
+            self.assertEqual(ranks[0]["name"], "Braise 1")
+            self.assertEqual(ranks[0]["capabilities"], [])
+        edited_values = self.path_form(owner_id=class_id, name="Voie des flammes")
+        edited_values.update(rank_1_unlock_level="3",
+                             rank_1_unlock_note="Avoir vaincu un dragon")
+        response = self.client.post(
+            f"/mj/voies/class/{path['id']}/modifier",
+            data=edited_values,
+            follow_redirects=True,
+        )
+        page = response.get_data(as_text=True)
+        self.assertIn("Voie enregistrée.", page)
+        self.assertNotIn("Ancien éditeur", page)
+        self.assertNotIn("capability_json", page)
+        self.assertEqual(page.count("Ajouter une capacité"), 5)
+        catalogue = self.client.get("/voies").get_data(as_text=True)
+        self.assertIn("Niveau minimal : 3", catalogue)
+        self.assertIn("Condition : Avoir vaincu un dragon", catalogue)
+
+    def test_removed_legacy_capability_payload_is_ignored(self):
+        self.login()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            class_id = get_db().execute(
+                "SELECT id FROM character_class WHERE configured = 1 LIMIT 1"
+            ).fetchone()["id"]
+        values = self.path_form(owner_id=class_id, name="Voie automatique")
+        values["rank_1_capability_json"] = json.dumps({
+            "id": "path.temp.voie.rank-1.active", "support": "full",
+            "targeting": {"selector": "single", "allegiance": ["enemy"]},
+            "operations": [{
+                "type": "damage", "target": "selected", "damage_type": "fire",
+                "value": {"dice": [{"count": 2, "sides": 6}], "terms": [],
+                          "constant": 0},
+            }],
+        })
+        response = self.client.post("/mj/voies/nouvelle", data=values)
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            database = get_db()
+            row = database.execute(
+                "SELECT id, ranks_json FROM class_path WHERE name = 'Voie automatique'"
+            ).fetchone()
+            self.assertEqual(json.loads(row["ranks_json"])[0]["capabilities"], [])
+            count = database.execute(
+                "SELECT COUNT(*) FROM path_capability pc JOIN path_rank pr "
+                "ON pr.id=pc.path_rank_id JOIN path_definition pd "
+                "ON pd.id=pr.path_definition_id WHERE pd.legacy_path_id=? "
+                "AND pd.origin_type='class'",
+                (row["id"],),
+            ).fetchone()[0]
+            self.assertEqual(count, 0)
+
+    def test_rank_can_receive_a_second_normalized_capability(self):
+        self.login()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            path = get_db().execute(
+                "SELECT id FROM class_path WHERE name = 'Rempart'"
+            ).fetchone()
+        url = f"/mj/voies/class/{path['id']}/rangs/1/capacites/nouvelle"
+        values = {
+            "csrf_token": self.csrf_token(), "name": "Riposte du gardien",
+            "execution_mode": "triggered", "action_cost": "reaction",
+            "structure_level": "structured", "trigger_event": "ally.targeted",
+            "activation_limit": "once_per_turn",
+            "operation_count": "2", "operation_0_type": "damage",
+            "operation_0_target_ref": "target.primary", "operation_0_dice_count": "1",
+            "operation_0_dice_sides": "8", "operation_0_damage_type": "physical",
+            "operation_1_type": "manual_effect", "operation_1_target_ref": "source",
+            "operation_1_description": "Échange sa position avec un allié.",
+        }
+        response = self.client.post(url, data=values, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Un allié est ciblé", page)
+        self.assertIn("Une fois par tour", page)
+        self.assertIn("Défense physique", page)
+        self.assertIn("Qui reçoit cet effet ?", page)
+        self.assertIn("Échange sa position avec un allié.", page)
+        self.assertIn('<option value="manual_effect" selected>', page)
+        edit_url = response.request.path
+        values.update(
+            structure_level="hybrid",
+            manual_description="Seulement si le gardien porte son bouclier.",
+        )
+        response = self.client.post(edit_url, data=values, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn(
+            '>Seulement si le gardien porte son bouclier.</textarea>', page,
+        )
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            database = get_db()
+            count = database.execute(
+                "SELECT COUNT(*) FROM path_capability pc JOIN path_rank pr "
+                "ON pr.id=pc.path_rank_id JOIN path_definition pd "
+                "ON pd.id=pr.path_definition_id WHERE pd.legacy_path_id=? "
+                "AND pd.origin_type='class' AND pr.rank=1", (path["id"],),
+            ).fetchone()[0]
+            self.assertEqual(count, 2)
+            target = database.execute(
+                "SELECT ct.selection_mode, ct.minimum_targets, ct.maximum_targets "
+                "FROM capability_target ct JOIN path_capability pc "
+                "ON pc.id=ct.capability_id WHERE pc.name=?",
+                ("Riposte du gardien",),
+            ).fetchone()
+            self.assertEqual(dict(target), {
+                "selection_mode": "manual",
+                "minimum_targets": 1,
+                "maximum_targets": 1,
+            })
+            manual = database.execute(
+                "SELECT manual_description FROM path_capability WHERE name=?",
+                ("Riposte du gardien",),
+            ).fetchone()[0]
+            self.assertEqual(manual, "Seulement si le gardien porte son bouclier.")
+
+    def test_racial_path_creator_computes_ability_bonuses(self):
+        self.login()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            species_id = get_db().execute(
+                "SELECT id FROM species WHERE configured = 1 LIMIT 1"
+            ).fetchone()["id"]
+        response = self.client.post(
+            "/mj/voies/nouvelle",
+            data=self.path_form("racial", species_id, "Voie des astres"),
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            path = get_db().execute(
+                "SELECT strength_bonus, wisdom_bonus FROM racial_path "
+                "WHERE name = 'Voie des astres'"
+            ).fetchone()
+            self.assertEqual((path["strength_bonus"], path["wisdom_bonus"]), (1, 1))
 
     def test_gm_dashboard_requires_login(self):
         response = self.client.get("/mj")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/mj/connexion", response.headers["Location"])
+
+    def test_gm_can_delete_a_character_and_its_related_data(self):
+        character_id = self.create_public_character()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            database = get_db()
+            database.execute(
+                "INSERT INTO equipment (character_id, item_type, name) "
+                "VALUES (?, 'tool', 'Objet à supprimer')", (character_id,),
+            )
+            database.commit()
+        self.login()
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/supprimer",
+            data={"csrf_token": self.csrf_token()}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("a été supprimé définitivement", response.get_data(as_text=True))
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            database = get_db()
+            self.assertIsNone(database.execute(
+                "SELECT 1 FROM character WHERE id = ?", (character_id,)
+            ).fetchone())
+            self.assertIsNone(database.execute(
+                "SELECT 1 FROM equipment WHERE character_id = ?", (character_id,)
+            ).fetchone())
+
+    def test_public_cannot_delete_a_character(self):
+        character_id = self.create_public_character()
+        response = self.client.post(
+            f"/mj/personnages/{character_id}/supprimer",
+            data={"csrf_token": self.csrf_token()},
+        )
         self.assertEqual(response.status_code, 302)
         self.assertIn("/mj/connexion", response.headers["Location"])
 

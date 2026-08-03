@@ -258,8 +258,8 @@
             <span>{{ unlocked_count }}/5</span>
           </header>
           <ol class="path-track">
-          {% for rank_number in range(1, 6) %}
-            {% set rank = path["ranks"][rank_number - 1] %}
+          {% for rank in path["ranks"] %}
+            {% set rank_number = rank["rank"] %}
             <li class="rank-step
                        {% if rank_number in unlocked_ranks[path_key] %}is-acquired
                        {% elif rank_number == unlocked_count + 1 %}is-next
@@ -286,15 +286,24 @@
               <span class="rank-name"><small>Rang {{ rank_number }}</small>{{ rank["name"] }}</span>
               <div class="rank-tooltip" role="tooltip">
                 <b>{{ path["name"] }} · {{ rank["name"] }}</b>
-                {% if rank["active"] %}
-                  <small>Actif · {{ rank["active"]["timing"] }}
-                    · {{ rank["_active_uses"] }}</small>
-                  <p>{{ rank["_active_effect"] }}</p>
+                {% if not rank["capability_details"] and (rank["unlock_level"] or rank["unlock_note"]) %}
+                  <ul class="path-effect-list rank-unlock-conditions">
+                    {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
+                    {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
+                  </ul>
                 {% endif %}
-                {% if rank["passive"] %}
-                  <small>Passif · {{ rank["passive"]["frequency"] }}</small>
-                  <p>{{ rank["_passive_effect"] }}</p>
-                {% endif %}
+                {% for capability in rank["capability_details"] %}
+                  {% if rank["capability_details"]|length > 1 %}<strong>{{ capability["name"] }}</strong>{% endif %}
+                  <small>{{ capability["execution_mode"] }}{% if capability["action_cost"] != 'none' %} · {{ capability["action_cost"] }}{% endif %}</small>
+                  {% if loop.first and (rank["unlock_level"] or rank["unlock_note"]) %}
+                    <ul class="path-effect-list rank-unlock-conditions">
+                      {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
+                      {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
+                    </ul>
+                  {% endif %}
+                  {% set effect_parts = effect_sentences(capability["description"]) %}
+                  <ul class="path-effect-list">{% for part in effect_parts %}<li>{{ part }}</li>{% endfor %}</ul>
+                {% endfor %}
               </div>
             </li>
           {% endfor %}

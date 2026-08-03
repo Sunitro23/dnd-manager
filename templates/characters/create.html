@@ -41,6 +41,9 @@
               {% for class_item in classes %}
                 <option value="{{ class_item['id'] }}"
                         data-hit-die="{{ class_item['hit_die'] }}"
+                        data-description="{{ class_item['choice_description'] }}"
+                        data-affinity="{{ class_item['choice_affinity'] }}"
+                        data-paths="{{ class_item['choice_paths'] }}"
                         {% for field in ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'] %}
                           data-{{ field }}-bonus="{{ class_item[field ~ '_bonus'] }}"
                         {% endfor %}
@@ -56,6 +59,10 @@
                 </option>
               {% endfor %}
             </select>
+            <article class="origin-choice-preview" data-choice-preview="class" hidden>
+              <strong data-choice-name></strong>
+              <p data-choice-description></p><p data-choice-affinity></p><p data-choice-paths></p>
+            </article>
           </div>
           <div>
             <label for="species_id">Espèce</label>
@@ -63,11 +70,18 @@
               <option value="">Choisir</option>
               {% for species_item in species %}
                 <option value="{{ species_item['id'] }}"
+                        data-description="{{ species_item['choice_description'] }}"
+                        data-affinity="{{ species_item['choice_affinity'] }}"
+                        data-paths="{{ species_item['choice_paths'] }}"
                         {% if request.form.get('species_id') == species_item['id']|string %}selected{% endif %}>
                   {{ species_item["name"] }}
                 </option>
               {% endfor %}
             </select>
+            <article class="origin-choice-preview" data-choice-preview="species" hidden>
+              <strong data-choice-name></strong>
+              <p data-choice-description></p><p data-choice-affinity></p><p data-choice-paths></p>
+            </article>
           </div>
         </div>
 

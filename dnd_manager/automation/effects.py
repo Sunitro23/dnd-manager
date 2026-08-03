@@ -33,6 +33,17 @@ class DealDamage:
         return updated, EffectEvent("deal_damage", target.identifier, target.hit_points - updated.hit_points)
 
 
+@dataclass(frozen=True)
+class HealthCost:
+    value: Formula
+
+    def apply(self, target, context):
+        amount = evaluate(self.value, context)
+        updated = damage(target, amount)
+        return updated, EffectEvent("health_cost", target.identifier,
+                                    target.hit_points - updated.hit_points)
+
+
 def evaluate(formula, context):
     rolled = context.roller.roll(formula.dice.count, formula.dice.sides)
     modifier = dict(context.ability_modifiers).get(formula.modifier, 0)

@@ -363,6 +363,20 @@ button,
   margin-bottom: 2rem;
 }
 
+.origin-choice-preview {
+  margin: -0.45rem 0 1rem;
+  padding: 0.7rem;
+  border: 1px solid #332e20;
+  border-left: 2px solid var(--accent);
+  background: #090a08b8;
+}
+
+.origin-choice-preview p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -646,6 +660,265 @@ button,
   margin-top: 0.35rem;
 }
 
+.path-rank-editor {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+}
+
+.path-rank-editor legend {
+  padding: 0 0.5rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.operation-heading,
+.operation-editor > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.operation-heading button {
+  width: auto;
+}
+
+.operation-editor {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #332e20;
+  background: #090a08b8;
+}
+
+.operation-editor > header {
+  margin-bottom: 0.75rem;
+}
+
+.operation-editor [data-fields-for][hidden] {
+  display: none;
+}
+
+.path-editor-page {
+  width: calc(100vw - 2rem);
+  max-width: 1500px;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.path-effect-list {
+  margin: 0.3rem 0 0.4rem;
+  padding-left: 1.25rem;
+  color: var(--text);
+}
+
+.path-effect-list li {
+  margin: 0.12rem 0;
+  padding-left: 0.15rem;
+}
+
+.path-effect-list li::marker {
+  color: var(--accent);
+}
+
+.test-results {
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.operation-editor.is-dragging {
+  opacity: 0.45;
+  border-color: var(--accent);
+}
+
+/* Éditeur de capacités : densité proche d'un panneau de règles, sans cartes volumineuses. */
+[data-normalized-capability-editor] .form-panel {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0;
+  padding: 0.35rem 0;
+}
+
+.normalized-capability-page > .eyebrow {
+  margin-bottom: 0.1rem;
+}
+
+.normalized-capability-page > h1 {
+  margin-bottom: 0.2rem;
+  font-size: clamp(1.45rem, 4vw, 2.1rem);
+}
+
+.normalized-capability-page > .field-note {
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+}
+
+[data-normalized-capability-editor] .form-panel > .field-grid {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+[data-normalized-capability-editor] h2 {
+  margin: 0.65rem 0 0.3rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid $line-subtle;
+  color: var(--accent);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-normalized-capability-editor] .field-grid,
+[data-normalized-capability-editor] .field-grid-three {
+  gap: 0.3rem 0.45rem;
+}
+
+[data-normalized-capability-editor] label {
+  margin-bottom: 0.12rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+[data-normalized-capability-editor] input,
+[data-normalized-capability-editor] select,
+[data-normalized-capability-editor] textarea {
+  min-height: 32px;
+  margin-bottom: 0.3rem;
+  padding: 0.28rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.78rem;
+}
+
+[data-normalized-capability-editor] textarea {
+  min-height: 52px;
+}
+
+[data-normalized-capability-editor] .checkbox-field {
+  margin: 0.15rem 0;
+  gap: 0.35rem;
+}
+
+[data-normalized-capability-editor] .checkbox-field input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+}
+
+[data-normalized-capability-editor] .checkbox-field label {
+  margin: 0;
+}
+
+[data-normalized-capability-editor] .operation-heading {
+  margin-top: 0.45rem;
+}
+
+[data-normalized-capability-editor] .operation-heading h2 {
+  flex: 1;
+  margin: 0;
+}
+
+[data-normalized-capability-editor] .operation-heading button,
+[data-normalized-capability-editor] .operation-editor > header button {
+  min-height: 28px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+}
+
+[data-normalized-capability-editor] .operation-editor {
+  margin-bottom: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-color: $line-subtle;
+  background: transparent;
+}
+
+[data-normalized-capability-editor] .operation-editor > header {
+  margin-bottom: 0.3rem;
+  font-size: 0.75rem;
+}
+
+[data-normalized-capability-editor] .operation-editor > header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-normalized-capability-editor] .button-danger-quiet {
+  width: auto;
+  flex: none;
+  border-color: #713d38;
+  background: transparent;
+  color: #efa49d;
+}
+
+[data-normalized-capability-editor] .operation-preview {
+  margin: 0.25rem 0 0;
+  padding: 0.35rem 0.45rem;
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+[data-normalized-capability-editor] .operation-preview[hidden] {
+  display: none;
+}
+
+[data-normalized-capability-editor] .operation-preview strong {
+  color: var(--text);
+}
+
+[data-normalized-capability-editor] .capability-description-preview {
+  margin-top: 0.45rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  background: #090a08b8;
+}
+
+[data-normalized-capability-editor] .capability-description-preview h3 {
+  margin-bottom: 0.2rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+[data-normalized-capability-editor] .operation-editor .field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+[data-normalized-capability-editor] .operation-advanced {
+  margin-top: 0.15rem;
+  padding-top: 0.2rem;
+  border-top: 1px dashed $line-subtle;
+}
+
+[data-normalized-capability-editor] .operation-advanced > summary {
+  width: max-content;
+  padding: 0.15rem 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.66rem;
+}
+
+[data-normalized-capability-editor] .form-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+
+[data-normalized-capability-editor] .form-actions button,
+[data-normalized-capability-editor] .form-actions .button {
+  min-height: 32px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 760px) {
+  .path-editor-page {
+    width: 100%;
+  }
+
+}
+
 .catalog-group + .catalog-group {
   border-top: 1px solid var(--border);
 }
@@ -666,7 +939,7 @@ button,
 }
 
 .rank-list li + li {
-  margin-top: 1rem;
+  margin-top: 0.55rem;
 }
 
 .rank-list p {
@@ -912,5 +1185,10 @@ h1.icon-heading img {
 
   .wizard-controls button {
     width: 100%;
+  }
+
+  [data-normalized-capability-editor] .form-panel > .field-grid,
+  [data-normalized-capability-editor] .operation-editor .field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

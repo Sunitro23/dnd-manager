@@ -1,6 +1,6 @@
 from dataclasses import asdict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from dnd_manager.api_access import authentication_required, token_is_valid
 from dnd_manager.authentication.http import is_gm
@@ -14,7 +14,7 @@ from dnd_manager.character_api.contracts import HealthSyncCommand, ResourceSyncC
 from dnd_manager.character_api.combat_profile import build_combat_profile
 from dnd_manager.character_api.sqlite_repository import SqliteCharacterExchangeRepository
 from dnd_manager.infrastructure.database import get_db
-from dnd_manager.ruleset.catalog import JsonRulesetCatalog
+from dnd_manager.ruleset.sqlite_catalog import SqliteRulesetCatalog
 from dnd_manager.shared.errors import (
     ConcurrentUpdate,
     InvalidRequest,
@@ -45,7 +45,7 @@ def read_combat_profile(character_id):
 
 def combat_profile_response(snapshot):
     bundle = ruleset_catalog().current()
-    profile = build_combat_profile(snapshot, bundle)
+    profile = build_combat_profile(snapshot, bundle, get_db())
     return versioned_response(profile, profile_etag(snapshot, bundle))
 
 
@@ -148,4 +148,4 @@ def ruleset_revision():
 
 
 def ruleset_catalog():
-    return JsonRulesetCatalog(current_app.config["ENGINE_DATA_PATH"])
+    return SqliteRulesetCatalog(get_db())

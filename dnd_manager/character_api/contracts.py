@@ -99,3 +99,9 @@ class ResourceSyncResult:
     character_id: int
     version: int
     resource: ResourceValue
+
+
+@dataclass(frozen=True)
+class ResistanceValue:
+    damage_type: str
+    level: str  # "resistance", "vulnerability", "immunity"

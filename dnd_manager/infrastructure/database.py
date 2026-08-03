@@ -47,11 +47,22 @@ def init_db():
     database = get_db()
     database.executescript(project_file("schema.sql").read_text(encoding="utf-8"))
     _migrate_existing_database(database)
-    sync_game_config(database)
+    install_catalogue_seed(database)
 
 
 def project_file(name):
     return Path(__file__).parents[2] / name
+
+
+def install_catalogue_seed(database):
+    configured = database.execute(
+        "SELECT 1 FROM character_class WHERE configured = 1 LIMIT 1"
+    ).fetchone()
+    if configured is None:
+        database.executescript(project_file("catalogue_seed.sql").read_text(encoding="utf-8"))
+    from dnd_manager.paths.repository import ensure_schema
+    ensure_schema(database)
+    database.commit()
 
 
 def table_columns(database, table):
@@ -115,25 +126,88 @@ def restore_character_indexes(database):
 
 
 def _migrate_existing_database(database):
-    migrate_catalogue_columns(database)
-    migrate_character_columns(database)
-    migrate_removed_features(database)
-    migrate_equipment(database)
+    ensure_schema_version_table(database)
+    current_version = get_or_init_schema_version(database)
+    run_migrations(database, current_version)
     database.commit()
 
 
+def ensure_schema_version_table(database):
+    database.execute("""
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+def get_or_init_schema_version(database):
+    version = get_schema_version(database)
+    if version == 0:
+        insert_schema_version(database, 1)
+        version = 1
+    return version
+
+
+def run_migrations(database, current_version):
+    migrate_catalogue_columns(database)
+    migrate_character_columns(database, current_version)
+    migrate_removed_features(database)
+    migrate_equipment(database)
+    recalculate_stale_health(database)
+
+
+def recalculate_stale_health(database):
+    from dnd_manager.characters.inventory.item_form import (
+        HP_SOURCE_SQL, equipment_maximum, recalculate_hp,
+    )
+    character_ids = database.execute("SELECT id FROM character").fetchall()
+    for item in character_ids:
+        character = database.execute(HP_SOURCE_SQL, (item["id"],)).fetchone()
+        if character is not None and character["max_hp"] != equipment_maximum(character):
+            recalculate_hp(database, item["id"])
+
+
+def get_schema_version(database):
+    row = database.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()
+    return row["version"] if row else 0
+
+
+def insert_schema_version(database, version):
+    database.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+
+
+def set_schema_version(database, version):
+    database.execute("DELETE FROM schema_version")
+    insert_schema_version(database, version)
+
+
 def migrate_catalogue_columns(database):
+    migrate_class_columns(database)
+    migrate_species_columns(database)
+    migrate_path_columns(database)
+
+
+def migrate_class_columns(database):
     abilities = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
-    class_specs = tuple((f"{field}_bonus", "INTEGER NOT NULL DEFAULT 0") for field in abilities)
-    add_missing_columns(database, "character_class", class_specs + (("configured", "INTEGER NOT NULL DEFAULT 0"),))
+    specs = tuple((f"{field}_bonus", "INTEGER NOT NULL DEFAULT 0") for field in abilities)
+    add_missing_columns(database, "character_class", specs + (("configured", "INTEGER NOT NULL DEFAULT 0"),))
+
+
+def migrate_species_columns(database):
     add_missing_columns(database, "species", (("stable_key", "TEXT"),))
+    names = ("physical_bonus", "elemental_bonus", "spiritual_bonus", "configured")
+    specs = tuple((name, "INTEGER NOT NULL DEFAULT 0") for name in names)
+    add_missing_columns(database, "species", specs)
+
+
+def migrate_path_columns(database):
     add_missing_columns(database, "class_path", (("stable_key", "TEXT"),))
     add_missing_columns(database, "racial_path", (("stable_key", "TEXT"),))
-    path_defenses = tuple((f"{name}_bonus", "INTEGER NOT NULL DEFAULT 0")
-                          for name in ("physical", "elemental", "spiritual"))
-    add_missing_columns(database, "racial_path", path_defenses)
-    species = ("physical_bonus", "elemental_bonus", "spiritual_bonus", "configured")
-    add_missing_columns(database, "species", tuple((name, "INTEGER NOT NULL DEFAULT 0") for name in species))
+    defenses = tuple((f"{name}_bonus", "INTEGER NOT NULL DEFAULT 0") for name in ("physical", "elemental", "spiritual"))
+    add_missing_columns(database, "racial_path", defenses)
+    from dnd_manager.paths.repository import ensure_schema
+    ensure_schema(database)
 
 
 def add_missing_columns(database, table, specifications):
@@ -143,19 +217,18 @@ def add_missing_columns(database, table, specifications):
             database.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
 
-def migrate_character_columns(database):
-    extend_legacy_score_range(database)
+def migrate_character_columns(database, current_version):
+    extend_legacy_score_range(database, current_version)
     specs = (("portrait_filename", "TEXT"), ("estus_available", "INTEGER NOT NULL DEFAULT 1"),
              ("class_path_id", "INTEGER REFERENCES class_path(id)"),
              ("racial_path_id", "INTEGER REFERENCES racial_path(id)"))
     add_missing_columns(database, "character", specs)
 
 
-def extend_legacy_score_range(database):
-    query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'character'"
-    schema = database.execute(query).fetchone()["sql"]
-    if "BETWEEN 8 AND 15" in schema:
+def extend_legacy_score_range(database, current_version):
+    if current_version < 2:
         _extend_character_score_range(database)
+        set_schema_version(database, 2)
 
 
 ACTION_USE_SCHEMA = """
@@ -191,6 +264,14 @@ def migrate_equipment(database):
     add_missing_columns(database, "equipment", specs + (("stat_bonus", "INTEGER NOT NULL DEFAULT 0"),))
     assign_legacy_slots(database)
     reactivate_catalogues(database)
+    create_equipment_unique_index(database)
+
+
+def create_equipment_unique_index(database):
+    database.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS equipment_slot_unique 
+        ON equipment (character_id, slot) WHERE slot != ''
+    """)
 
 
 def assign_legacy_slots(database):
@@ -230,28 +311,6 @@ def reactivate_catalogues(database):
             database.execute(f"UPDATE {table} SET active = 1")
 
 
-def sync_game_config(database=None):
-    database = database or get_db()
-    if sync_ready(database):
-        from dnd_manager.configuration.sync import synchronize
-        synchronize(database, project_file("game_data.json"))
-    return database
-
-
-def sync_ready(database):
-    return species_table_exists(database) and configured_catalogues_exist(database)
-
-
-def species_table_exists(database):
-    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'species'"
-    return bool(database.execute(query).fetchone())
-
-
-def configured_catalogues_exist(database):
-    tables = ("species", "character_class")
-    return all("configured" in table_columns(database, table) for table in tables)
-
-
 @click.command("init-db")
 def init_db_command():
     """Crée les tables de l'application."""
@@ -270,4 +329,4 @@ def migrate_installed_database(database):
     query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'character'"
     if database.execute(query).fetchone():
         _migrate_existing_database(database)
-        sync_game_config(database)
+        install_catalogue_seed(database)

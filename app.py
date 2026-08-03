@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -73,9 +74,7 @@ def require_api_credentials(app):
 def runtime_paths(app):
     database = os.environ.get("DATABASE_PATH", str(Path(app.instance_path) / "dnd_manager.sqlite3"))
     portraits = os.environ.get("PORTRAIT_PATH", str(Path(app.instance_path) / "portraits"))
-    engine_data = str(Path(app.root_path) / "engine_data.json")
     return {"DATABASE_PATH": database, "PORTRAIT_PATH": portraits,
-            "ENGINE_DATA_PATH": engine_data,
             "OPENAPI_PATH": str(Path(app.root_path) / "openapi.yaml"),
             "API_PUBLIC": environment_flag("API_PUBLIC", True),
             "SESSION_COOKIE_SECURE": environment_flag("SESSION_COOKIE_SECURE")}
@@ -102,6 +101,11 @@ def register_components(app):
 def register_template_globals(app):
     """Les formulaires lisent les règles depuis le serveur : pas de table dupliquée en JS."""
     app.jinja_env.globals["ability_rules_json"] = ability_rules_json
+    app.jinja_env.globals["effect_sentences"] = effect_sentences
+
+
+def effect_sentences(text):
+    return [part for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part]
 
 
 def ability_rules_json():

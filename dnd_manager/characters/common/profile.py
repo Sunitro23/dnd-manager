@@ -7,12 +7,12 @@ uniquement dans la couche de présentation, ce qui a conduit le formulaire de d�
 potentiellement périmée.
 """
 
-import json
 from dataclasses import dataclass
 
 from dnd_manager.characters.common.rules import ability_modifier, defense
 from dnd_manager.shared.catalog import ABILITY_ABBREVIATIONS, ABILITY_FIELDS
 from dnd_manager.characters.inventory.sqlite_repository import equipment_for_character
+from dnd_manager.paths.repository import paths_for_origin
 
 DEFENSES = {
     "physical": ("Constitution", "constitution", "physical_bonus"),
@@ -115,10 +115,8 @@ def path_specifications(character):
 
 
 def load_path_type(database, path_type, table, owner_column, owner_id):
-    query = f"SELECT * FROM {table} WHERE {owner_column} = ? AND configured = 1 ORDER BY name"
-    rows = database.execute(query, (owner_id,)).fetchall()
-    return [{**dict(row), "path_type": path_type,
-             "ranks": json.loads(row["ranks_json"])} for row in rows]
+    del table, owner_column
+    return paths_for_origin(database, path_type, owner_id)
 
 
 def load_unlocked_rows(database, character_id):

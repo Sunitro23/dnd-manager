@@ -6,6 +6,16 @@ from dnd_manager.shared.catalog import (
     VISIBILITIES,
 )
 
+CLASS_ROLES = {
+    "Chevalier": "Combattant robuste, spécialisé dans la protection et la puissance physique.",
+    "Roublard": "Expert de la mobilité, de la précision et des attaques opportunistes.",
+    "Héraut": "Soutien charismatique capable d’inspirer, négocier et renforcer ses alliés.",
+    "Spécialiste": "Aventurier polyvalent utilisant préparation, outils et connaissance du terrain.",
+    "Clerc": "Utilisateur de miracles orienté vers les soins, la protection et les forces spirituelles.",
+    "Sorcier": "Maître des connaissances et des effets magiques fondés sur l’Intelligence.",
+    "Pyromancien": "Lanceur de sorts offensif manipulant le feu, le chaos et l’endurance.",
+}
+
 
 def required_text(form, name, maximum):
     value = optional_text(form, name, maximum)
@@ -22,10 +32,52 @@ def optional_text(form, name, maximum):
 
 
 def catalogue_options(database):
-    classes = configured_rows(database, "character_class", "*")
-    species = configured_rows(database, "species", "id, name")
+    classes = described_classes(database)
+    species = described_species(database)
     players = ordered_rows(database, "player", "id, display_name", "display_name")
     return classes, species, players
+
+
+def described_classes(database):
+    rows = configured_rows(database, "character_class", "*")
+    return [described_class(database, row) for row in rows]
+
+
+def described_class(database, row):
+    paths = owner_paths(database, "class_path", "class_id", row["id"])
+    affinity = next((field.replace("_bonus", "").capitalize()
+                     for field in (f"{name}_bonus" for name in ABILITY_FIELDS)
+                     if row[field]), "Polyvalente")
+    return {**dict(row), "choice_description": row["description"] or CLASS_ROLES.get(row["name"], ""),
+            "choice_affinity": f"Affinité principale : {affinity}.",
+            "choice_paths": path_summary(paths)}
+
+
+def described_species(database):
+    rows = configured_rows(database, "species", "*")
+    return [described_species_item(database, row) for row in rows]
+
+
+def described_species_item(database, row):
+    paths = owner_paths(database, "racial_path", "species_id", row["id"])
+    defenses = (f"Défenses : physique {row['physical_bonus']:+d}, "
+                f"élémentaire {row['elemental_bonus']:+d}, "
+                f"spirituelle {row['spiritual_bonus']:+d}.")
+    return {**dict(row), "choice_description": row["description"] or row["traits"],
+            "choice_affinity": defenses, "choice_paths": path_summary(paths)}
+
+
+def owner_paths(database, table, owner_column, owner_id):
+    query = (f"SELECT name, abilities FROM {table} WHERE {owner_column} = ? "
+             "AND configured = 1 ORDER BY name COLLATE NOCASE")
+    return database.execute(query, (owner_id,)).fetchall()
+
+
+def path_summary(paths):
+    if not paths:
+        return "Aucune voie disponible pour le moment."
+    choices = ", ".join(f"{path['name']} ({path['abilities']})" for path in paths)
+    return f"Voies proposées : {choices}."
 
 
 def configured_rows(database, table, columns):

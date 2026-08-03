@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Capacité · {{ path["name"] }} · Gestionnaire JDR{% endblock %}
+{% block content %}
+  <section class="path-editor-page normalized-capability-page">
+    <p class="eyebrow">{{ path["name"] }} · Rang {{ rank }}</p>
+    <h1>{{ "Modifier" if capability else "Créer" }} une capacité</h1>
+    <p class="field-note">Le rang débloque cette capacité. Son activation, ses cibles et ses effets sont configurés ici.</p>
+
+    {% set existing_operations = capability["editor_operations"] if capability else [] %}
+    <form method="post" data-normalized-capability-editor>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <section class="form-panel">
+        <div class="field-grid">
+          <div><label for="name">Nom de la capacité</label><input id="name" name="name" required value="{{ request.form.get('name', capability['name'] if capability else '') }}"></div>
+          <div><label for="execution_mode">Mode d’exécution</label><select id="execution_mode" name="execution_mode">
+            {% set selected = request.form.get('execution_mode', capability['execution_mode'] if capability else 'activated') %}
+            {% for value, label in [('manual','Manuel'),('activated','Activé par le joueur'),('triggered','Déclenché automatiquement'),('permanent','Permanent')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+          <div><label for="action_cost">Coût d’action</label><select id="action_cost" name="action_cost">
+            {% set selected = request.form.get('action_cost', capability['action_cost'] if capability else 'action') %}
+            {% for value, label in [('action','Action'),('bonus_action','Action bonus'),('reaction','Réaction'),('free','Action libre'),('none','Aucun')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+          <div><label for="structure_level">Création de la description</label><select id="structure_level" name="structure_level">
+            {% set selected = request.form.get('structure_level', capability['structure_level'] if capability else 'structured') %}
+            {% for value, label in [('structured','Automatique à partir des effets'),('hybrid','Effets structurés avec précisions manuelles'),('manual','Description entièrement manuelle')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+        </div>
+
+        <h2>Déclenchement et limites</h2>
+        <div class="field-grid field-grid-three">
+          <div data-trigger-field><label for="trigger_event">Quand la capacité se déclenche-t-elle ?</label><select id="trigger_event" name="trigger_event">
+            {% set selected = request.form.get('trigger_event', capability['trigger_event'] if capability else '') or '' %}
+            {% for value, label in [('', 'Aucun déclencheur'),('ally.targeted','Un allié est ciblé'),('source.damaged','Vous subissez des dégâts'),('target.damaged','La cible subit des dégâts'),('source.health_below_half','Vos PV passent sous la moitié'),('source.health_zero','Vos PV tombent à zéro'),('turn.start','Début de votre tour'),('attack.hit','Une attaque touche'),('attack.missed','Une attaque échoue'),('combat.start','Début du combat')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+          <div><label for="activation_limit">Limite d’activation</label><select id="activation_limit" name="activation_limit">
+            {% set selected = request.form.get('activation_limit', capability['activation_limit'] if capability else '') or '' %}
+            {% for value, label in [('', 'Aucune limite'),('once_per_turn','Une fois par tour de joueur'),('once_per_round','Une fois par tour global'),('once_per_combat','Une fois par combat'),('first_turn','Au premier tour'),('at_will','À volonté')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></div>
+          <div><label for="uses_maximum">Nombre d’utilisations</label><input id="uses_maximum" name="uses_maximum" type="number" min="1" placeholder="Illimité" value="{{ request.form.get('uses_maximum', capability['uses_maximum'] if capability else '') or '' }}"></div>
+          <div data-recharge-field><label for="recharge">Récupération des utilisations</label><select id="recharge" name="recharge"><option value="">Aucune</option>{% set selected = request.form.get('recharge', capability['recharge'] if capability else '') %}<option value="short_rest" {% if selected == 'short_rest' %}selected{% endif %}>Après un repos court</option><option value="long_rest" {% if selected == 'long_rest' %}selected{% endif %}>Après un repos long</option></select></div>
+        </div>
+
+        <div data-manual-description><label for="manual_description">Précisions que les effets ne peuvent pas expliquer</label><textarea id="manual_description" name="manual_description" rows="4">{{ request.form.get('manual_description', capability['manual_description'] if capability else '') }}</textarea></div>
+
+        <div class="operation-heading"><h2>Effets</h2><button type="button" class="button-secondary" data-add-normalized-operation>Ajouter un effet</button></div>
+        <input type="hidden" name="operation_count" data-operation-count value="{{ request.form.get('operation_count', existing_operations|length or 1) }}">
+        <div data-normalized-operation-list>
+          {% set operation_total = request.form.get('operation_count', existing_operations|length or 1)|int %}
+          {% for index in range(operation_total) %}
+            {% set operation = existing_operations[index] if index < existing_operations|length else {} %}
+            {% include "paths/_normalized_operation.html" %}
+          {% endfor %}
+        </div>
+        <section class="capability-description-preview" aria-live="polite">
+          <h3>Aperçu de la description</h3>
+          <ul class="path-effect-list" data-capability-description-preview></ul>
+        </section>
+        <div class="form-actions"><button type="submit">Enregistrer la capacité</button><a class="button button-secondary" href="{{ url_for('main.path_edit', path_type=path['path_type'], path_id=path['id']) }}">Retour à la voie</a></div>
+      </section>
+    </form>
+  </section>
+  <template id="normalized-operation-template">{% set index = '__INDEX__' %}{% set operation = {} %}{% include "paths/_normalized_operation.html" %}</template>
+  <script src="{{ url_for('static', filename='capability-editor.js') }}"></script>
+{% endblock %}

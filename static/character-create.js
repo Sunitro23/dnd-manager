@@ -45,6 +45,20 @@ function applyDraft(values) {
 function refresh() {
   abilityNames.forEach(refreshAbility);
   renderBudget(pointBuyTotal());
+  refreshChoicePreview("class", "class_id");
+  refreshChoicePreview("species", "species_id");
+}
+
+function refreshChoicePreview(kind, selectId) {
+  const option = document.getElementById(selectId).selectedOptions[0];
+  const preview = document.querySelector(`[data-choice-preview="${kind}"]`);
+  const visible = Boolean(option?.value);
+  preview.hidden = !visible;
+  if (!visible) return;
+  preview.querySelector("[data-choice-name]").textContent = option.textContent.split("·")[0].trim();
+  preview.querySelector("[data-choice-description]").textContent = option.dataset.description;
+  preview.querySelector("[data-choice-affinity]").textContent = option.dataset.affinity;
+  preview.querySelector("[data-choice-paths]").textContent = option.dataset.paths;
 }
 
 function refreshAbility(name) {

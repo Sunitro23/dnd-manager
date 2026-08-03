@@ -105,6 +105,22 @@ def character_edit(character_id):
     return EDIT_HANDLERS[request.method](database, character, options)
 
 
+@bp.post("/personnages/<int:character_id>/supprimer")
+@gm_required
+def character_delete(character_id):
+    validate_csrf()
+    database = get_db()
+    character = database.execute(
+        "SELECT name FROM character WHERE id = ?", (character_id,)
+    ).fetchone()
+    if character is None:
+        abort(404)
+    database.execute("DELETE FROM character WHERE id = ?", (character_id,))
+    database.commit()
+    flash(f"{character['name']} a été supprimé définitivement.", "success")
+    return redirect(url_for("main.gm_dashboard"))
+
+
 def show_character_edit(_database, character, options):
     return render_character_form(character, options)
 
