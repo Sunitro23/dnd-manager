@@ -342,7 +342,9 @@ def migrate_catalogue_columns(database):
 def migrate_class_columns(database):
     abilities = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
     specs = tuple((f"{field}_bonus", "INTEGER NOT NULL DEFAULT 0") for field in abilities)
-    add_missing_columns(database, "character_class", specs + (("configured", "INTEGER NOT NULL DEFAULT 0"),))
+    add_missing_columns(database, "character_class", (("stable_key", "TEXT"),) + specs + (
+        ("configured", "INTEGER NOT NULL DEFAULT 0"),
+    ))
 
 
 def migrate_species_columns(database):

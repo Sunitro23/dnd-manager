@@ -167,6 +167,12 @@ def synchronize_origins(database, table, items):
             (*values.values(), stable_key),
         )
         if cursor.rowcount != 1:
+            cursor = database.execute(
+                f"UPDATE {table} SET stable_key=?,{assignments},configured=1 "
+                "WHERE name=? AND (stable_key IS NULL OR stable_key='')",
+                (stable_key, *values.values(), item.get("name", "")),
+            )
+        if cursor.rowcount != 1:
             raise ValueError(f"Origine inconnue dans le catalogue JSON : {stable_key}")
 
 
