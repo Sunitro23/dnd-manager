@@ -333,7 +333,7 @@ CREATE TABLE IF NOT EXISTS equipment (
 CREATE INDEX IF NOT EXISTS equipment_character
 ON equipment (character_id, equipped, name);
 
-CREATE UNIQUE INDEX IF NOT EXISTS equipment_slot_unique 
+CREATE UNIQUE INDEX IF NOT EXISTS equipment_slot_unique
 ON equipment (character_id, slot) WHERE slot != '';
 
 CREATE TABLE IF NOT EXISTS login_attempt (
