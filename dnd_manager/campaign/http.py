@@ -1,6 +1,6 @@
 import sqlite3
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 
 from dnd_manager.authentication.http import gm_required, is_gm, validate_csrf
 from dnd_manager.characters.common.rules import (
@@ -14,6 +14,7 @@ from dnd_manager.campaign.path_editor import PATH_TYPES, find_path, path_from_fo
 from dnd_manager.campaign.capability_editor import capability_values
 from dnd_manager.infrastructure.database import get_db
 from dnd_manager.paths.repository import list_paths
+from dnd_manager.paths.json_catalog import write_catalog
 from dnd_manager.paths.normalized import (
     delete_capability, find_capability, save_capability, update_rank_metadata,
 )
@@ -109,6 +110,7 @@ def capability_delete(path_type, path_id, capability_id):
     path = find_path(get_db(), path_type, path_id)
     if path is None or not delete_capability(get_db(), path["definition_id"], capability_id):
         return ("Capacité introuvable.", 404)
+    persist_path_catalog(get_db())
     flash("Capacité supprimée.", "success")
     return redirect(url_for("main.path_edit", path_type=path_type, path_id=path_id))
 
@@ -122,6 +124,7 @@ def capability_form_response(path, rank, capability=None):
                 get_db(), path["definition_id"], rank, values,
                 capability["id"] if capability else None,
             )
+            persist_path_catalog(get_db())
             flash("Capacité enregistrée dans le nouveau système.", "success")
             return redirect(url_for(
                 "main.capability_edit", path_type=path["path_type"], path_id=path["id"],
@@ -145,6 +148,7 @@ def path_form_response(path=None, path_id=None):
             saved_id = persist_path(database, values, path_id)
             saved_path = find_path(database, values["path_type"], saved_id)
             update_rank_metadata(database, saved_path["definition_id"], values["ranks"], request.form)
+            persist_path_catalog(database)
             flash("Voie enregistrée.", "success")
             return redirect(url_for("main.path_edit", path_type=values["path_type"],
                                     path_id=saved_id))
@@ -156,6 +160,10 @@ def path_form_response(path=None, path_id=None):
     context = path_context(database)
     return render_template("paths/form.html", path=path, classes=context["classes"],
                            races=context["races"], path_types=PATH_TYPES)
+
+
+def persist_path_catalog(database):
+    write_catalog(database, current_app.config["PATH_CATALOG_JSON"])
 
 
 def path_context(database):

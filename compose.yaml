@@ -11,11 +11,13 @@ services:
     environment:
       DATABASE_PATH: /data/dnd_manager.sqlite3
       PORTRAIT_PATH: /data/portraits
+      PATH_CATALOG_JSON: /data/voies.json
       PORT: "8000"
-    ports:
-      - "127.0.0.1:${APP_PORT:-8002}:8000"
+    expose:
+      - "8000"
     volumes:
       - dnd-manager-data:/data
+      - ./data/voies.json:/data/voies.json
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777
@@ -23,6 +25,15 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    networks:
+      proxy-network:
+        aliases:
+          - dnd-manager
 
 volumes:
   dnd-manager-data:
+
+networks:
+  proxy-network:
+    external: true
+    name: proxy-network
