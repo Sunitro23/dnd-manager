@@ -112,6 +112,30 @@ class CatalogueDatabaseValidationTestCase(unittest.TestCase):
             ).fetchone()
             self.assertIsNone(removed)
 
+    def test_json_catalog_recovers_legacy_origins_without_stable_keys(self):
+        with self.app.app_context():
+            init_db()
+            database = get_db()
+            database.execute(
+                "UPDATE character_class SET stable_key='' WHERE name='Chevalier'"
+            )
+            database.execute(
+                "UPDATE species SET stable_key='' WHERE name='Humains'"
+            )
+            database.commit()
+
+            synchronize_catalog(database, self.app.config["PATH_CATALOG_JSON"])
+
+            self.assertIsNotNone(database.execute(
+                "SELECT 1 FROM character_class WHERE stable_key='class.chevalier'"
+            ).fetchone())
+            self.assertIsNotNone(database.execute(
+                "SELECT 1 FROM species WHERE stable_key='species.humains'"
+            ).fetchone())
+            self.assertEqual(database.execute(
+                "SELECT COUNT(*) FROM path_definition WHERE status='published'"
+            ).fetchone()[0], 38)
+
     def test_removed_path_text_fields_are_migrated_to_manual_effects(self):
         with self.app.app_context():
             init_db()
