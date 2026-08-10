@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>{% block title %}Gestionnaire JDR{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='custom-path.css') }}">
     <script defer src="{{ url_for('static', filename='app.js') }}"></script>
     <script defer src="{{ url_for('static', filename='sheet-ui.js') }}"></script>
     <script defer src="{{ url_for('static', filename='async-forms.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='custom-path.js') }}"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Aller au contenu</a>

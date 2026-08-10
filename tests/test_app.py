@@ -428,7 +428,7 @@ class ApplicationTestCase(unittest.TestCase):
             self.assertEqual(ranks[0]["capabilities"], [])
         edited_values = self.path_form(owner_id=class_id, name="Voie des flammes")
         edited_values.update(rank_1_unlock_level="3",
-                             rank_1_unlock_note="Avoir vaincu un dragon")
+                             rank_1_unlock_note="Valeur obsolète à ignorer")
         response = self.client.post(
             f"/mj/voies/class/{path['id']}/modifier",
             data=edited_values,
@@ -441,7 +441,8 @@ class ApplicationTestCase(unittest.TestCase):
         self.assertEqual(page.count("Ajouter une capacité"), 5)
         catalogue = self.client.get("/voies").get_data(as_text=True)
         self.assertIn("Niveau minimal : 3", catalogue)
-        self.assertIn("Condition : Avoir vaincu un dragon", catalogue)
+        self.assertNotIn("Valeur obsolète à ignorer", catalogue)
+        self.assertNotIn("rank_1_unlock_note", page)
 
     def test_removed_legacy_capability_payload_is_ignored(self):
         self.login()
@@ -507,16 +508,14 @@ class ApplicationTestCase(unittest.TestCase):
         self.assertIn("Échange sa position avec un allié.", page)
         self.assertIn('<option value="manual_effect" selected>', page)
         edit_url = response.request.path
-        values.update(
-            structure_level="hybrid",
-            manual_description="Seulement si le gardien porte son bouclier.",
-        )
+        # Les anciennes valeurs envoyées par un navigateur ne peuvent plus
+        # désactiver la description automatique.
+        values.update(structure_level="hybrid", manual_description="Texte obsolète.")
         response = self.client.post(edit_url, data=values, follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn(
-            '>Seulement si le gardien porte son bouclier.</textarea>', page,
-        )
+        self.assertNotIn("Création de la description", page)
+        self.assertNotIn("Précisions que les effets ne peuvent pas expliquer", page)
         with self.app.app_context():
             from dnd_manager.infrastructure.database import get_db
             database = get_db()
@@ -538,11 +537,44 @@ class ApplicationTestCase(unittest.TestCase):
                 "minimum_targets": 1,
                 "maximum_targets": 1,
             })
-            manual = database.execute(
-                "SELECT manual_description FROM path_capability WHERE name=?",
-                ("Riposte du gardien",),
-            ).fetchone()[0]
-            self.assertEqual(manual, "Seulement si le gardien porte son bouclier.")
+            columns = {row["name"] for row in database.execute(
+                "PRAGMA table_info(path_capability)"
+            ).fetchall()}
+            self.assertNotIn("manual_description", columns)
+            self.assertNotIn("structure_level", columns)
+            obsolete = database.execute(
+                "SELECT 1 FROM effect_node en JOIN path_capability pc "
+                "ON pc.id=en.capability_id WHERE pc.name=? AND en.label=?",
+                ("Riposte du gardien", "Texte obsolète."),
+            ).fetchone()
+            self.assertIsNone(obsolete)
+
+    def test_permanent_capability_does_not_require_a_hidden_action_cost(self):
+        self.login()
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            path = get_db().execute(
+                "SELECT id FROM class_path WHERE name = 'Rempart'"
+            ).fetchone()
+        response = self.client.post(
+            f"/mj/voies/class/{path['id']}/rangs/1/capacites/nouvelle",
+            data={
+                "csrf_token": self.csrf_token(), "name": "Main experte permanente",
+                "execution_mode": "permanent", "activation_limit": "",
+                "operation_count": "1", "operation_0_type": "manual_effect",
+                "operation_0_target_ref": "source",
+                "operation_0_description": "Tests réalisés avec des outils : +4 au dé.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Valeur invalide pour action_cost", response.get_data(as_text=True))
+        with self.app.app_context():
+            from dnd_manager.infrastructure.database import get_db
+            capability = get_db().execute(
+                "SELECT action_cost FROM path_capability WHERE name='Main experte permanente'"
+            ).fetchone()
+            self.assertEqual(capability["action_cost"], "none")
 
     def test_racial_path_creator_computes_ability_bonuses(self):
         self.login()

@@ -43,7 +43,10 @@ async function fetchIcons(picker, page) {
 }
 
 function fetchIconPage(picker, page) {
-  return fetch(`${picker.dataset.iconUrl}?page=${page}`, {
+  const url = new URL(picker.dataset.iconUrl, window.location.href);
+  url.searchParams.set("page", page);
+  if (picker.dataset.iconCategory) url.searchParams.set("category", picker.dataset.iconCategory);
+  return fetch(url, {
     headers: {"X-Requested-With": "XMLHttpRequest"},
   });
 }
@@ -63,7 +66,8 @@ function finishIconLoading(button, nextPage) {
 
 function iconButton(icon) {
   const button = document.createElement("button");
-  Object.assign(button, {type: "button", title: "Utiliser cette icône"});
+  const filename = icon.path.split("/").pop().replace(/\.[^.]+$/, "").replaceAll("_", " ");
+  Object.assign(button, {type: "button", title: filename, "aria-label": `Utiliser ${filename}`});
   button.dataset.iconChoice = icon.path;
   button.append(iconImage(icon.url));
   return button;
@@ -118,7 +122,39 @@ function handlePickerSummary(target) {
 }
 
 function loadUnloadedPicker(picker) {
-  if (picker.open && picker.dataset.loaded !== "true") loadItemIcons(picker);
+  if (!picker.open || picker.dataset.loaded === "true") return;
+  selectInitialIconCategory(picker);
+  loadItemIcons(picker);
+}
+
+function selectInitialIconCategory(picker) {
+  if (picker.dataset.iconCategory) return;
+  const defaults = {
+    weapon: "weapons", shield: "shields", armor: "armor", accessory: "rings",
+    spell: "spells", tool: "tools", consumable: "items", quest: "items", other: "items",
+  };
+  selectIconCategory(picker, defaults[picker.dataset.iconType] || "items");
+}
+
+function selectIconCategory(picker, category) {
+  picker.dataset.iconCategory = category;
+  picker.querySelectorAll("[data-icon-category]").forEach((button) => {
+    const active = button.dataset.iconCategory === category;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function handleIconCategory(target) {
+  const button = target.closest("[data-icon-category]");
+  if (!button) return;
+  const picker = button.closest("[data-icon-picker]");
+  if (picker.dataset.iconCategory === button.dataset.iconCategory) return;
+  selectIconCategory(picker, button.dataset.iconCategory);
+  picker.dataset.loaded = "false";
+  picker.dataset.nextPage = "";
+  picker.querySelector("[data-icon-options]").replaceChildren();
+  loadItemIcons(picker);
 }
 
 function handleIconChoice(target) {
@@ -132,6 +168,7 @@ function handleIconChoice(target) {
 function applyIconChoice(form, choice) {
   form.querySelector('[name="icon_path"]').value = choice.dataset.iconChoice;
   form.querySelector("[data-item-icon-preview]").src = choice.querySelector("img").src;
+  choice.closest("[data-icon-picker]").open = false;
 }
 
 function handleMoreIcons(target) {
@@ -233,7 +270,7 @@ function closeOutsideMenus(target) {
 }
 
 const CLICK_HANDLERS = [
-  handlePickerToggle, handlePickerSummary, handleIconChoice, handleMoreIcons,
+  handlePickerToggle, handlePickerSummary, handleIconCategory, handleIconChoice, handleMoreIcons,
   handleSheetTab, handleInventoryToggle, handleCategory, handleInventoryItem,
   handleActionDismiss,
 ];

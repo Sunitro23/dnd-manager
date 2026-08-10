@@ -82,6 +82,16 @@ ITEM_ICON_DIRECTORIES = {
     "quest": ("00_items",),
     "other": ("00_items",),
 }
+ITEM_ICON_CATEGORIES = {
+    "items": ("Objets", ("00_items",)),
+    "weapons": ("Armes", ("01_weapons",)),
+    "shields": ("Boucliers", ("02_shields",)),
+    "armor": ("Armures", ("03_armor",)),
+    "spells": ("Sorts", ("04_spells",)),
+    "rings": ("Anneaux", ("05_rings",)),
+    "arrows": ("Projectiles", ("06_arrows",)),
+    "tools": ("Catalyseurs", ("07_catalysts",)),
+}
 UPDATE_PORTRAIT_SQL = """
 UPDATE character SET portrait_filename = ?, version = version + 1,
     updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -242,6 +252,63 @@ def unlock_rank(character_id):
     path_type = request.form.get("path_type", "")
     path_id = form_integer("path_id", "Voie invalide.")
     return unlock_rank_response(character_id, RankCommand(path_type, path_id))
+
+
+@bp.post("/<int:character_id>/voie-personnelle/<int:rank>")
+def update_custom_path_rank(character_id, rank):
+    validate_csrf()
+    character = accessible_character(character_id)
+    if character["character_type"] != "player" or rank not in range(1, 6):
+        abort(400, "Cette voie personnelle n’est pas disponible.")
+    try:
+        description = optional_text("description", 2000)
+    except ValueError as error:
+        abort(400, str(error))
+    database = get_db()
+    database.execute(
+        "INSERT INTO character_custom_rank (character_id,rank,description) VALUES (?,?,?) "
+        "ON CONFLICT(character_id,rank) DO UPDATE SET description=excluded.description",
+        (character_id, rank, description),
+    )
+    database.commit()
+    return saved_response("Voie personnelle mise à jour.", character_id=character_id,
+                          refresh_sheet=True, close_dialog=True)
+
+
+@bp.post("/<int:character_id>/degats-mortels")
+def update_mortal_damage(character_id):
+    validate_csrf()
+    accessible_character(character_id)
+    value = form_integer("mortal_damage", "Compteur de dégâts mortels invalide.")
+    if value not in range(4):
+        abort(400, "Le compteur de dégâts mortels doit être compris entre 0 et 3.")
+    database = get_db()
+    database.execute(
+        "UPDATE character SET mortal_damage=?,version=version+1,"
+        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (value, character_id),
+    )
+    database.commit()
+    message = "Le personnage est mort." if value == 3 else f"Dégâts mortels : {value}/3."
+    return saved_response(message, character_id=character_id, refresh_sheet=True)
+
+
+@bp.post("/<int:character_id>/ames")
+def update_souls(character_id):
+    validate_csrf()
+    accessible_character(character_id)
+    value = form_integer("souls", "Compteur d’âmes invalide.")
+    if value < 0:
+        abort(400, "Le nombre d’âmes ne peut pas être négatif.")
+    database = get_db()
+    database.execute(
+        "UPDATE character SET souls=?,version=version+1,"
+        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (value, character_id),
+    )
+    database.commit()
+    return saved_response(f"Âmes : {value}.", character_id=character_id,
+                          refresh_sheet=True)
 @bp.post("/<int:character_id>/niveau")
 def level_up(character_id):
     validate_csrf()
@@ -597,16 +664,21 @@ def interface_asset(asset_path):
 
 @bp.get("/bibliotheque-icones/<item_type>")
 def item_icon_library(item_type):
-    directories = icon_directories(item_type)
+    directories = icon_directories(item_type, request.args.get("category"))
     page = requested_icon_page()
     selected, next_page = icon_page(ITEM_ICON_ROOT, directories, page)
     return icon_library_response(selected, next_page)
 
 
-def icon_directories(item_type):
+def icon_directories(item_type, category=None):
     directories = ITEM_ICON_DIRECTORIES.get(item_type)
     if directories is None:
         abort(404)
+    if category:
+        selected = ITEM_ICON_CATEGORIES.get(category)
+        if selected is None:
+            abort(404)
+        return selected[1]
     return directories
 
 

@@ -1,0 +1,32 @@
+{% macro render_rank(rank) -%}
+  <strong>{{ rank["name"] }}</strong>
+  {% if not rank["capability_details"] and rank["unlock_level"] %}
+    <ul class="path-effect-list rank-unlock-conditions">
+      <li>Niveau minimal : {{ rank["unlock_level"] }}</li>
+    </ul>
+  {% endif %}
+  {% for capability in rank["capability_details"] %}
+    <div class="rank-capability">
+      {% if rank["capability_details"]|length > 1 %}<b>{{ capability["name"] }}</b>{% endif %}
+      {% if capability.get("simple_text") %}
+        <small>Texte libre</small>
+      {% else %}
+        <small>
+          {{ capability["execution_mode_label"] }}
+          {% if capability["action_cost"] != "none" %} · {{ capability["action_cost_label"] }}{% endif %}
+          {% if capability["uses_label"] %} · {{ capability["uses_label"] }}{% endif %}
+        </small>
+      {% endif %}
+      {% if loop.first and rank["unlock_level"] %}
+        <ul class="path-effect-list rank-unlock-conditions">
+          <li>Niveau minimal : {{ rank["unlock_level"] }}</li>
+        </ul>
+      {% endif %}
+      <ul class="path-effect-list">
+        {% for effect in capability["description_items"] %}<li>{{ effect }}</li>{% else %}
+          {% if capability.get("simple_text") %}<li class="muted">Aucun texte pour ce rang.</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+{%- endmacro %}

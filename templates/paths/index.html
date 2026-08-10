@@ -1,37 +1,5 @@
 {% extends "base.html" %}
-{% macro render_effect(text) -%}
-  {% set sentences = effect_sentences(text) %}
-  <ul class="path-effect-list">{% for sentence in sentences %}<li>{{ sentence }}</li>{% endfor %}</ul>
-{%- endmacro %}
-{% macro render_rank(rank) -%}
-  <strong>{{ rank["name"] }}</strong>
-  {% if not rank["capability_details"] and (rank["unlock_level"] or rank["unlock_note"]) %}
-    <ul class="path-effect-list rank-unlock-conditions">
-      {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
-      {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
-    </ul>
-  {% endif %}
-  {% for capability in rank["capability_details"] %}
-    <div class="rank-capability">
-      {% if rank["capability_details"]|length > 1 %}<b>{{ capability["name"] }}</b>{% endif %}
-      <small>
-        {% if capability["execution_mode"] == "permanent" %}Permanent
-        {% elif capability["execution_mode"] == "triggered" %}Déclenché
-        {% elif capability["execution_mode"] == "manual" %}Manuel
-        {% else %}Activé par le joueur{% endif %}
-        {% if capability["action_cost"] != "none" %} · {{ {'action':'Action','bonus_action':'Action bonus','reaction':'Réaction','free':'Action libre'}[capability['action_cost']] }}{% endif %}
-        {% if capability["uses_maximum"] %} · {{ capability["uses_maximum"] }} fois par {{ 'Repos court' if capability["recharge"] == 'short_rest' else 'Repos au Feu' }}{% endif %}
-      </small>
-      {% if loop.first and (rank["unlock_level"] or rank["unlock_note"]) %}
-        <ul class="path-effect-list rank-unlock-conditions">
-          {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
-          {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
-        </ul>
-      {% endif %}
-      {{ render_effect(capability["description"]) }}
-    </div>
-  {% endfor %}
-{%- endmacro %}
+{% from "paths/_rank_display.html" import render_rank %}
 {% block title %}Voies proposées · Gestionnaire JDR{% endblock %}
 {% block content %}
   <header class="page-heading">

@@ -1,7 +1,12 @@
 <article class="operation-editor" data-normalized-operation>
   <header>
     <strong>Effet <span data-effect-number>{{ index + 1 if index is number else '' }}</span> — <span data-effect-title>Effet</span></strong>
-    <button type="button" class="button-danger-quiet" data-remove-normalized-operation>Supprimer</button>
+    <span class="operation-actions">
+      <button type="button" class="button-secondary" data-move-operation="up" aria-label="Monter l’effet">↑</button>
+      <button type="button" class="button-secondary" data-move-operation="down" aria-label="Descendre l’effet">↓</button>
+      <button type="button" class="button-secondary" data-duplicate-normalized-operation>Dupliquer</button>
+      <button type="button" class="button-danger-quiet" data-remove-normalized-operation>Supprimer</button>
+    </span>
   </header>
   {% set prefix = 'operation_' ~ index ~ '_' %}
   {% set selected_type = request.form.get(prefix ~ 'type', operation.get('operation_type', 'damage')) %}
@@ -52,7 +57,7 @@
 
   <div class="field-grid" data-fields-for="damage heal temporary_health modify_attack_damage modify_value apply_status reduce_damage grant_immunity move extra_attack">
     <div><label>Durée</label><input name="{{ prefix }}duration_value" type="number" min="1" value="{{ request.form.get(prefix ~ 'duration_value', operation.get('duration_value', '')) or '' }}"></div>
-    <div><label>Mesurée en</label><select name="{{ prefix }}duration_unit">{% set selected = request.form.get(prefix ~ 'duration_unit', operation.get('duration_unit', 'turn')) %}<option value="turn" {% if selected == 'turn' %}selected{% endif %}>Tours de Joueur</option><option value="round" {% if selected == 'round' %}selected{% endif %}>Tours Globaux</option></select></div>
+    <div><label>Mesurée en</label><select name="{{ prefix }}duration_unit">{% set selected = request.form.get(prefix ~ 'duration_unit', operation.get('duration_unit', 'turn')) %}<option value="turn" {% if selected == 'turn' %}selected{% endif %}>Tours de l’utilisateur</option><option value="round" {% if selected == 'round' %}selected{% endif %}>Tours globaux</option></select></div>
     <div><label>Expiration</label><select name="{{ prefix }}expiration">{% set selected = request.form.get(prefix ~ 'expiration', operation.get('expiration', '')) or '' %}{% for value,label in [('', 'Automatique'),('end_of_source_turn','Fin du tour de l’utilisateur'),('start_of_source_turn','Début du tour de l’utilisateur'),('end_of_target_turn','Fin du tour de la cible'),('start_of_target_turn','Début du tour de la cible'),('end_of_combat','Fin du combat'),('condition_ends','Quand la condition disparaît')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
   </div>
 

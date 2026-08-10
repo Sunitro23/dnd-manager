@@ -124,7 +124,6 @@ CREATE TABLE IF NOT EXISTS path_rank (
     rank INTEGER NOT NULL CHECK (rank > 0),
     name TEXT NOT NULL DEFAULT '',
     unlock_level INTEGER,
-    unlock_note TEXT NOT NULL DEFAULT '',
     UNIQUE (path_definition_id, rank)
 );
 
@@ -139,10 +138,6 @@ CREATE TABLE IF NOT EXISTS path_capability (
     action_cost TEXT NOT NULL DEFAULT 'none' CHECK (
         action_cost IN ('action', 'bonus_action', 'reaction', 'free', 'none')
     ),
-    structure_level TEXT NOT NULL CHECK (
-        structure_level IN ('manual', 'hybrid', 'structured')
-    ),
-    manual_description TEXT NOT NULL DEFAULT '',
     trigger_event TEXT,
     activation_limit TEXT,
     uses_maximum INTEGER CHECK (uses_maximum IS NULL OR uses_maximum > 0),
@@ -275,6 +270,8 @@ CREATE TABLE IF NOT EXISTS character (
     current_hp INTEGER NOT NULL DEFAULT 1,
     max_hp INTEGER NOT NULL DEFAULT 1 CHECK (max_hp > 0),
     estus_available INTEGER NOT NULL DEFAULT 1 CHECK (estus_available IN (0, 1)),
+    mortal_damage INTEGER NOT NULL DEFAULT 0 CHECK (mortal_damage BETWEEN 0 AND 3),
+    souls INTEGER NOT NULL DEFAULT 0 CHECK (souls >= 0),
     version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -289,7 +286,7 @@ ON character (owner_id);
 CREATE TABLE IF NOT EXISTS character_rank (
     id INTEGER PRIMARY KEY,
     character_id INTEGER NOT NULL REFERENCES character(id) ON DELETE CASCADE,
-    path_type TEXT NOT NULL CHECK (path_type IN ('class', 'racial')),
+    path_type TEXT NOT NULL CHECK (path_type IN ('class', 'racial', 'custom')),
     path_id INTEGER NOT NULL,
     rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
     unlocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -303,6 +300,13 @@ CREATE TABLE IF NOT EXISTS character_action_use (
     rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
     uses_spent INTEGER NOT NULL DEFAULT 0 CHECK (uses_spent >= 0),
     PRIMARY KEY (character_id, path_type, path_id, rank)
+);
+
+CREATE TABLE IF NOT EXISTS character_custom_rank (
+    character_id INTEGER NOT NULL REFERENCES character(id) ON DELETE CASCADE,
+    rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
+    description TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (character_id, rank)
 );
 
 CREATE TABLE IF NOT EXISTS equipment (

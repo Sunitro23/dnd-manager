@@ -63,6 +63,8 @@ def install_catalogue_seed(database):
     from dnd_manager.paths.repository import ensure_schema
     ensure_schema(database)
     database.commit()
+    from dnd_manager.paths.json_catalog import synchronize_catalog
+    synchronize_catalog(database, current_app.config["PATH_CATALOG_JSON"])
 
 
 def table_columns(database, table):
@@ -153,8 +155,157 @@ def run_migrations(database, current_version):
     migrate_catalogue_columns(database)
     migrate_character_columns(database, current_version)
     migrate_removed_features(database)
+    migrate_custom_character_path(database)
     migrate_equipment(database)
+    migrate_removed_path_fields(database)
+    normalize_negative_path_modifiers(database)
+    normalize_capability_execution_modes(database)
     recalculate_stale_health(database)
+
+
+def migrate_custom_character_path(database):
+    database.execute("""
+        CREATE TABLE IF NOT EXISTS character_custom_rank (
+            character_id INTEGER NOT NULL REFERENCES character(id) ON DELETE CASCADE,
+            rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
+            description TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (character_id, rank)
+        )
+    """)
+    row = database.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='character_rank'"
+    ).fetchone()
+    if row is None or "'custom'" in row["sql"]:
+        return
+    database.execute("""
+        CREATE TABLE character_rank_with_custom (
+            id INTEGER PRIMARY KEY,
+            character_id INTEGER NOT NULL REFERENCES character(id) ON DELETE CASCADE,
+            path_type TEXT NOT NULL CHECK (path_type IN ('class', 'racial', 'custom')),
+            path_id INTEGER NOT NULL,
+            rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
+            unlocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (character_id, path_type, path_id, rank)
+        )
+    """)
+    database.execute("""
+        INSERT INTO character_rank_with_custom
+            (id,character_id,path_type,path_id,rank,unlocked_at)
+        SELECT id,character_id,path_type,path_id,rank,unlocked_at FROM character_rank
+    """)
+    database.execute("DROP TABLE character_rank")
+    database.execute("ALTER TABLE character_rank_with_custom RENAME TO character_rank")
+
+
+def migrate_removed_path_fields(database):
+    """Convertit les anciens textes libres en effets, puis retire leurs colonnes."""
+    capability_columns = table_columns(database, "path_capability")
+    rank_columns = table_columns(database, "path_rank")
+    if "manual_description" in capability_columns:
+        for row in database.execute(
+                "SELECT id,manual_description FROM path_capability "
+                "WHERE trim(manual_description) != ''").fetchall():
+            add_manual_effect(database, row["id"], row["manual_description"])
+    if "unlock_note" in rank_columns:
+        for rank in database.execute(
+                "SELECT id,path_definition_id,rank,unlock_note FROM path_rank "
+                "WHERE trim(unlock_note) != ''").fetchall():
+            capability_ids = [row["id"] for row in database.execute(
+                "SELECT id FROM path_capability WHERE path_rank_id=? ORDER BY position,id",
+                (rank["id"],),
+            ).fetchall()]
+            if not capability_ids:
+                capability_ids = [create_rank_rule_capability(database, rank)]
+            for capability_id in capability_ids:
+                add_manual_effect(database, capability_id, rank["unlock_note"])
+    if "manual_description" in capability_columns:
+        database.execute("ALTER TABLE path_capability DROP COLUMN manual_description")
+    if "structure_level" in capability_columns:
+        database.execute("ALTER TABLE path_capability DROP COLUMN structure_level")
+    if "unlock_note" in rank_columns:
+        database.execute("ALTER TABLE path_rank DROP COLUMN unlock_note")
+    remove_duplicate_manual_effects(database)
+
+
+def remove_duplicate_manual_effects(database):
+    duplicates = database.execute(
+        "SELECT capability_id,trim(label) AS label,MIN(id) AS kept_id "
+        "FROM effect_node WHERE node_type='manual_effect' AND trim(label) != '' "
+        "GROUP BY capability_id,trim(label) HAVING COUNT(*) > 1"
+    ).fetchall()
+    for item in duplicates:
+        database.execute(
+            "DELETE FROM effect_node WHERE capability_id=? AND node_type='manual_effect' "
+            "AND trim(label)=? AND id!=?",
+            (item["capability_id"], item["label"], item["kept_id"]),
+        )
+
+
+def normalize_negative_path_modifiers(database):
+    """Canonicalise les anciennes diminutions encodées comme Ajouter une valeur négative."""
+    database.execute(
+        "UPDATE effect_operation SET operation_mode='subtract',fixed_value=ABS(fixed_value) "
+        "WHERE operation_type='modify_value' AND operation_mode='add' AND fixed_value < 0"
+    )
+
+
+def normalize_capability_execution_modes(database):
+    """Une capacité payée en action sans événement est activée par le joueur."""
+    database.execute(
+        "UPDATE path_capability SET execution_mode='activated' "
+        "WHERE execution_mode='triggered' AND trigger_event IS NULL "
+        "AND action_cost IN ('action','bonus_action','reaction','free')"
+    )
+
+
+def create_rank_rule_capability(database, rank):
+    path_key = database.execute(
+        "SELECT stable_key FROM path_definition WHERE id=?", (rank["path_definition_id"],)
+    ).fetchone()["stable_key"]
+    position = database.execute(
+        "SELECT COUNT(*) FROM path_capability WHERE path_rank_id=?", (rank["id"],)
+    ).fetchone()[0]
+    cursor = database.execute(
+        "INSERT INTO path_capability "
+        "(path_rank_id,stable_key,name,execution_mode,action_cost,structure_level,"
+        "manual_description,position) VALUES (?,?,?,?,?,'structured','',?)",
+        (rank["id"], f"{path_key}.rank-{rank['rank']}.regle", "Règle du rang",
+         "permanent", "none", position),
+    )
+    database.execute(
+        "INSERT INTO capability_target (capability_id,selection_mode,allegiance) "
+        "VALUES (?,'none','any')", (cursor.lastrowid,),
+    )
+    return cursor.lastrowid
+
+
+def add_manual_effect(database, capability_id, description):
+    text = description.strip()
+    duplicate = database.execute(
+        "SELECT 1 FROM effect_node WHERE capability_id=? AND node_type='manual_effect' "
+        "AND trim(label)=?", (capability_id, text),
+    ).fetchone()
+    if duplicate:
+        return
+    root = database.execute(
+        "SELECT id FROM effect_node WHERE capability_id=? AND node_type='sequence' "
+        "ORDER BY position,id LIMIT 1", (capability_id,),
+    ).fetchone()
+    if root is None:
+        root_id = database.execute(
+            "INSERT INTO effect_node (capability_id,node_type,label,position) "
+            "VALUES (?,'sequence','Effets',0)", (capability_id,),
+        ).lastrowid
+    else:
+        root_id = root["id"]
+    position = database.execute(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM effect_node WHERE capability_id=? "
+        "AND parent_id=?", (capability_id, root_id),
+    ).fetchone()[0]
+    database.execute(
+        "INSERT INTO effect_node (capability_id,parent_id,node_type,label,position) "
+        "VALUES (?,?,'manual_effect',?,?)", (capability_id, root_id, text, position),
+    )
 
 
 def recalculate_stale_health(database):
@@ -220,6 +371,8 @@ def add_missing_columns(database, table, specifications):
 def migrate_character_columns(database, current_version):
     extend_legacy_score_range(database, current_version)
     specs = (("portrait_filename", "TEXT"), ("estus_available", "INTEGER NOT NULL DEFAULT 1"),
+             ("mortal_damage", "INTEGER NOT NULL DEFAULT 0"),
+             ("souls", "INTEGER NOT NULL DEFAULT 0"),
              ("class_path_id", "INTEGER REFERENCES class_path(id)"),
              ("racial_path_id", "INTEGER REFERENCES racial_path(id)"))
     add_missing_columns(database, "character", specs)

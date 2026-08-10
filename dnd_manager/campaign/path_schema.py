@@ -103,6 +103,10 @@ def positive_integer(value):
 
 
 def describe_capability(capability):
+    return " ".join(describe_capability_items(capability))
+
+
+def describe_capability_items(capability):
     targets = {
         "self": "Le personnage", "single": "La cible", "multiple": "Les cibles",
         "all": "Les cibles dans la zone",
@@ -113,19 +117,102 @@ def describe_capability(capability):
     if allegiance:
         labels = {"ally": "alliée", "enemy": "ennemie", "neutral": "neutre"}
         subject += f" {labels.get(allegiance[0], allegiance[0])}"
-    effects, consumed = [], set()
     operations = capability.get("operations", [])
+    effects, consumed = describe_targeting(targeting, operations), set()
     for index, operation in enumerate(operations):
         if index in consumed:
             continue
-        operation_subject = "Le personnage" if operation.get("target") == "self" else subject
+        operation_subject = operation_subject_label(operation, subject)
+        if operation.get("type") == "custom_ability":
+            description = operation.get("description", "").strip()
+            if description:
+                effects.append(description)
+            continue
         defense_group = matching_defense_group(operations, index)
         if defense_group:
             consumed.update(defense_group)
             effects.append(f"{operation_subject} {describe_all_defenses(operation, operation_subject)}.")
             continue
-        effects.append(f"{operation_subject} {describe_operation(operation)}.")
-    return " ".join(effects)
+        description = describe_operation(operation)
+        if operation_subject.startswith("Les "):
+            description = pluralize_description(description)
+        effects.append(f"{operation_subject} {description}.")
+    return effects
+
+
+def describe_targeting(targeting, operations):
+    """Rend visibles les portées qui seraient sinon seulement stockées par l’éditeur."""
+    selector = targeting.get("selector")
+    allegiance = targeting.get("allegiance", [])
+    label = {"ally": "alliées", "enemy": "ennemies", "neutral": "neutres"}.get(
+        allegiance[0] if allegiance else None, ""
+    )
+    if selector == "multiple" and targeting.get("range"):
+        distance = targeting["range"]
+        if targeting_distance_is_already_described(distance, operations):
+            return []
+        unit = "m" if distance.get("unit") == "meter" else distance.get("unit", "m")
+        qualifier = f" {label}" if label else ""
+        return [
+            f"Choisissez une ou plusieurs cibles{qualifier} situées à "
+            f"{distance.get('value'):g} {unit} ou moins."
+        ]
+    if selector == "all" and targeting.get("area"):
+        distance = targeting["area"].get("distance", {})
+        if targeting_distance_is_already_described(distance, operations):
+            return []
+        unit = "m" if distance.get("unit") == "meter" else distance.get("unit", "m")
+        qualifier = f" {label}" if label else ""
+        return [
+            f"La zone affecte toutes les cibles{qualifier} situées dans un rayon de "
+            f"{distance.get('value'):g} {unit}."
+        ]
+    return []
+
+
+def targeting_distance_is_already_described(distance, operations):
+    value = distance.get("value")
+    if value is None:
+        return False
+    rendered = f"{value:g} m"
+    return any(
+        operation.get("type") == "custom_ability"
+        and rendered in operation.get("description", "")
+        for operation in operations
+    )
+
+
+def operation_subject_label(operation, fallback):
+    return {
+        "source": "Le personnage", "target.primary": "La cible principale",
+        "target.all": "Les cibles", "target.allies": "Les cibles alliées",
+        "target.enemies": "Les cibles ennemies", "trigger.source": "L’auteur du déclenchement",
+        "trigger.target": "La cible du déclenchement",
+        "area.entities": "Les créatures dans la zone",
+        "summon.created": "La créature invoquée",
+    }.get(operation.get("target_ref"),
+          "Le personnage" if operation.get("target") == "self" else fallback)
+
+
+def pluralize_description(description):
+    """Accorde le premier verbe des descriptions générées dont le sujet est pluriel."""
+    replacements = {
+        "subit ": "subissent ", "ajoute ": "ajoutent ", "récupère ": "récupèrent ",
+        "perd ": "perdent ", "fixe ": "fixent ", "régénère ": "régénèrent ",
+        "augmente ": "augmentent ", "réduit ": "réduisent ", "multiplie ": "multiplient ",
+        "modifie ": "modifient ", "reçoit ": "reçoivent ", "se déplace ": "se déplacent ",
+        "est repoussée ": "sont repoussées ", "peut voler ": "peuvent voler ",
+        "obtient ": "obtiennent ", "gagne ": "gagnent ", "choisit ": "choisissent ",
+        "doit choisir ": "doivent choisir ", "reste ": "restent ", "est immunisé ": "sont immunisées ",
+        "ignore ": "ignorent ", "bénéficie ": "bénéficient ",
+    }
+    for singular, plural in replacements.items():
+        if description.startswith(singular):
+            result = plural + description[len(singular):]
+            return (result.replace(" sa ", " leur ")
+                    .replace(" son ", " leur ")
+                    .replace(" ses ", " leurs "))
+    return description
 
 
 def matching_defense_group(operations, start):
@@ -159,9 +246,14 @@ def describe_operation(operation):
         value = describe_value(operation.get("value"))
         damage_type = damage_type_label(operation.get("damage_type"))
         if operation.get("mode") == "attach":
-            recipient = "à ses sorts" if operation.get("applies_to") == "spell" else "à sa prochaine attaque"
-            frequency = " une fois par tour" if operation.get("frequency") == "once_per_turn" else ""
+            once_per_turn = operation.get("frequency") == "once_per_turn"
+            recipient = ("à ses sorts" if operation.get("applies_to") == "spell" else
+                         "à une attaque" if once_per_turn else "à sa prochaine attaque")
+            frequency = " une fois par tour" if once_per_turn else ""
             return f"ajoute {value} dégâts{damage_type} {recipient}{frequency}{describe_duration(operation)}"
+        if operation.get("frequency") == "once_per_turn":
+            return (f"subit {value} dégâts{damage_type} au début de chacun de ses tours"
+                    f"{describe_duration(operation)}")
         return f"subit {value} dégâts{damage_type}{describe_duration(operation)}"
     if operation_type == "modify_resource":
         if operation.get("operation") == "set_minimum":
@@ -170,10 +262,11 @@ def describe_operation(operation):
                     "au lieu de tomber à 0 PV")
         regeneration = (operation.get("frequency") == "once_per_turn"
                         and operation.get("operation") == "add")
-        verb = ("régénère" if regeneration else
+        temporary = operation.get("resource") == "temporary_health"
+        verb = ("gagne" if temporary else "régénère" if regeneration else
                 {"add": "récupère", "subtract": "perd", "set": "fixe"}.get(
                     operation.get("operation"), "modifie"))
-        resource = "PV temporaires" if operation.get("resource") == "temporary_health" else "PV"
+        resource = "PV temporaires" if temporary else "PV"
         frequency = " par tour" if operation.get("frequency") == "once_per_turn" else ""
         trigger = describe_trigger(operation.get("trigger"))
         return (f"{verb} {describe_value(operation.get('value'))} {resource}{frequency}"
@@ -187,6 +280,8 @@ def describe_operation(operation):
         else:
             rendered = f"+{value:g}" if operation.get("operation") == "add" else f"{value:g}"
         stat = stat_label(operation.get("stat"))
+        if operation.get("stat") in {"movement.speed", "movement.walk"}:
+            rendered += " m"
         verb = {"add": "augmente", "subtract": "réduit", "set": "fixe",
                 "multiply": "multiplie"}.get(operation.get("operation"), "modifie")
         return (f"{verb} {stat} de {rendered}{describe_duration(operation)}"
@@ -216,12 +311,13 @@ def describe_operation(operation):
     if operation_type == "move":
         distance = operation.get("distance", {})
         value = distance.get("value", 0)
+        rendered_value = f"{value:g}" if isinstance(value, (int, float)) else value
         unit = "m" if distance.get("unit") == "meter" else distance.get("unit", "m")
         if operation.get("direction") == "away":
-            return f"est repoussée de {value} {unit}"
+            return f"est repoussée de {rendered_value} {unit}"
         if operation.get("mode") == "flight":
-            return f"peut voler sur {value} {unit}"
-        return f"se déplace de {value} {unit}"
+            return f"peut voler sur {rendered_value} {unit}"
+        return f"se déplace de {rendered_value} {unit}"
     if operation_type == "define_attack" and operation.get("damage"):
         damage_type = damage_type_label(operation.get("damage_type"))
         return (f"obtient une attaque naturelle infligeant "
@@ -229,12 +325,27 @@ def describe_operation(operation):
     if operation_type == "extra_attack":
         count = operation.get("count", 1)
         return f"gagne {count} attaque{'s' if count > 1 else ''} supplémentaire{'s' if count > 1 else ''}{describe_duration(operation)}"
+    if operation_type == "choice":
+        options = operation.get("options") or []
+        rendered = []
+        for option in options:
+            if isinstance(option, str) and option.strip():
+                rendered.append(option.strip())
+            elif isinstance(option, dict):
+                label = (option.get("label") or option.get("description") or "").strip()
+                if label:
+                    rendered.append(label)
+        if rendered:
+            return "choisit entre : " + " ; ".join(rendered)
+        return "doit choisir un effet (options manquantes)"
+    if operation_type == "custom_ability":
+        return operation.get("description", "").strip()
     labels = {
         "modify_protection": "modifie une protection", "define_attack": "obtient une attaque",
         "force_critical": "réussit un coup critique", "cancel_event": "annule un événement",
         "trigger_action": "déclenche une action", "summon": "invoque une créature",
         "use_ability": "utilise une capacité", "reveal": "révèle une information",
-        "choice": "choisit entre plusieurs effets", "custom_ability": "applique un effet manuel",
+        "choice": "choisit entre plusieurs effets",
     }
     return labels.get(operation_type, "applique un effet") + describe_duration(operation)
 
@@ -267,8 +378,11 @@ def describe_duration(operation):
     if not duration:
         return ""
     value = duration.get("value")
-    singular = "tour" if duration.get("unit") == "turn" else "round"
-    return f" pendant {value} {singular}{'s' if value != 1 else ''}"
+    if duration.get("unit") == "turn":
+        unit = "tour de l’utilisateur" if value == 1 else "tours de l’utilisateur"
+    else:
+        unit = "tour global" if value == 1 else "tours globaux"
+    return f" pendant {value} {unit}"
 
 
 def describe_trigger(trigger):

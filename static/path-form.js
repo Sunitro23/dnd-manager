@@ -14,4 +14,14 @@ if (pathDefinitionForm) {
 
   origin.addEventListener("change", updateOwner);
   updateOwner();
+
+  const ranks = [...pathDefinitionForm.querySelectorAll("[data-path-rank]")];
+  ranks.forEach((rank) => rank.addEventListener("toggle", () => {
+    if (rank.open) ranks.forEach((other) => { if (other !== rank) other.open = false; });
+  }));
+  pathDefinitionForm.querySelectorAll("[data-confirm-delete]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      if (!window.confirm(button.dataset.confirmDelete)) event.preventDefault();
+    });
+  });
 }

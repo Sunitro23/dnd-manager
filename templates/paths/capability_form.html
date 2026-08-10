@@ -16,13 +16,9 @@
             {% set selected = request.form.get('execution_mode', capability['execution_mode'] if capability else 'activated') %}
             {% for value, label in [('manual','Manuel'),('activated','Activé par le joueur'),('triggered','Déclenché automatiquement'),('permanent','Permanent')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select></div>
-          <div><label for="action_cost">Coût d’action</label><select id="action_cost" name="action_cost">
+          <div data-action-field><label for="action_cost">Coût d’action</label><select id="action_cost" name="action_cost">
             {% set selected = request.form.get('action_cost', capability['action_cost'] if capability else 'action') %}
             {% for value, label in [('action','Action'),('bonus_action','Action bonus'),('reaction','Réaction'),('free','Action libre'),('none','Aucun')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-          </select></div>
-          <div><label for="structure_level">Création de la description</label><select id="structure_level" name="structure_level">
-            {% set selected = request.form.get('structure_level', capability['structure_level'] if capability else 'structured') %}
-            {% for value, label in [('structured','Automatique à partir des effets'),('hybrid','Effets structurés avec précisions manuelles'),('manual','Description entièrement manuelle')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select></div>
         </div>
 
@@ -36,11 +32,9 @@
             {% set selected = request.form.get('activation_limit', capability['activation_limit'] if capability else '') or '' %}
             {% for value, label in [('', 'Aucune limite'),('once_per_turn','Une fois par tour de joueur'),('once_per_round','Une fois par tour global'),('once_per_combat','Une fois par combat'),('first_turn','Au premier tour'),('at_will','À volonté')] %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select></div>
-          <div><label for="uses_maximum">Nombre d’utilisations</label><input id="uses_maximum" name="uses_maximum" type="number" min="1" placeholder="Illimité" value="{{ request.form.get('uses_maximum', capability['uses_maximum'] if capability else '') or '' }}"></div>
+          <div data-uses-field><label for="uses_maximum">Limite d’utilisation</label><input id="uses_maximum" name="uses_maximum" type="number" min="1" placeholder="Nombre de fois" value="{{ request.form.get('uses_maximum', capability['uses_maximum'] if capability else '') or '' }}"></div>
           <div data-recharge-field><label for="recharge">Récupération des utilisations</label><select id="recharge" name="recharge"><option value="">Aucune</option>{% set selected = request.form.get('recharge', capability['recharge'] if capability else '') %}<option value="short_rest" {% if selected == 'short_rest' %}selected{% endif %}>Après un repos court</option><option value="long_rest" {% if selected == 'long_rest' %}selected{% endif %}>Après un repos long</option></select></div>
         </div>
-
-        <div data-manual-description><label for="manual_description">Précisions que les effets ne peuvent pas expliquer</label><textarea id="manual_description" name="manual_description" rows="4">{{ request.form.get('manual_description', capability['manual_description'] if capability else '') }}</textarea></div>
 
         <div class="operation-heading"><h2>Effets</h2><button type="button" class="button-secondary" data-add-normalized-operation>Ajouter un effet</button></div>
         <input type="hidden" name="operation_count" data-operation-count value="{{ request.form.get('operation_count', existing_operations|length or 1) }}">

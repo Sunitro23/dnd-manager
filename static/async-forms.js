@@ -80,6 +80,7 @@ async function applyResult(result) {
   updateActionUses(result);
   updatePortrait(result);
   if (result.refresh_sheet) await refreshSheet(result);
+  if (result.close_dialog) document.querySelector("[data-custom-path-dialog]")?.close();
 }
 
 function updateHealth(result) {

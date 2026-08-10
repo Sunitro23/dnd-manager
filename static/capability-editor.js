@@ -22,11 +22,15 @@ if (normalizedEditor) {
       "target.enemies": "Les cibles ennemies", "trigger.source": "L’auteur du déclenchement",
       "trigger.target": "La cible du déclenchement", "area.entities": "Les créatures dans la zone",
       "summon.created": "La créature invoquée" }[targetReference] || "La cible";
+    const pluralSubject = subject.startsWith("Les ");
+    const agree = (singular, plural) => pluralSubject ? plural : singular;
     const durationValue = fieldValue(operation, "duration_value");
-    const durationUnit = fieldValue(operation, "duration_unit") === "round"
-      ? "tour global" : "tour de joueur";
+    const globalDuration = fieldValue(operation, "duration_unit") === "round";
+    const durationUnit = globalDuration
+      ? (durationValue === "1" ? "tour global" : "tours globaux")
+      : (durationValue === "1" ? "tour de l’utilisateur" : "tours de l’utilisateur");
     const duration = durationValue
-      ? ` pendant ${durationValue} ${durationUnit}${durationValue === "1" ? "" : "s"}` : "";
+      ? ` pendant ${durationValue} ${durationUnit}` : "";
     const conditionType = fieldValue(operation, "condition_type");
     const condition = { shield_equipped: " avec un bouclier équipé",
       incoming_attack: " uniquement contre l’attaque déclenchante",
@@ -41,12 +45,24 @@ if (normalizedEditor) {
       const mode = fieldValue(operation, "operation_mode");
       const value = fieldValue(operation, "fixed_value");
       if (!statistic?.value || !value) return "Choisis la statistique, la modification et la valeur.";
-      const verb = { add: "augmente", subtract: "réduit", set: "fixe",
+      const verb = { add: agree("augmente", "augmentent"),
+        subtract: agree("réduit", "réduisent"), set: agree("fixe", "fixent"),
         minimum: "fixe le minimum de", maximum: "fixe le maximum de",
-        override: "remplace", multiply: "multiplie" }[mode] || "modifie";
-      const possessedStatistic = statistic.value === "defense.all"
-        ? "toutes ses Défenses" : `sa ${statisticLabel}`;
-      const renderedValue = mode === "add" ? `+${value}` : value;
+        override: agree("remplace", "remplacent"),
+        multiply: agree("multiplie", "multiplient") }[mode] || agree("modifie", "modifient");
+      const possessedStatistic = {
+        "defense.all": pluralSubject ? "toutes leurs Défenses" : "toutes ses Défenses",
+        "defense.physical": `${pluralSubject ? "leur" : "sa"} Défense physique`,
+        "defense.elemental": `${pluralSubject ? "leur" : "sa"} Défense élémentaire`,
+        "defense.spiritual": `${pluralSubject ? "leur" : "sa"} Défense spirituelle`,
+        "movement.walk": `${pluralSubject ? "leur" : "sa"} vitesse de déplacement à pied`,
+        "initiative.bonus": `${pluralSubject ? "leur" : "son"} Initiative`,
+        "saving_throw.all": `${pluralSubject ? "leurs" : "ses"} sauvegardes`,
+        "health.current": `${pluralSubject ? "leurs" : "ses"} points de vie actuels`,
+        "attack.damage": `${pluralSubject ? "leurs" : "ses"} dégâts d’attaque`,
+      }[statistic.value] || statisticLabel;
+      const unit = statistic.value === "movement.walk" ? " m" : "";
+      const renderedValue = `${mode === "add" ? `+${value}` : value}${unit}`;
       return complete(`${subject} ${verb} ${possessedStatistic} de ${renderedValue}`);
     }
     if (["damage", "modify_attack_damage", "reduce_damage", "reflect_damage",
@@ -54,15 +70,18 @@ if (normalizedEditor) {
       const dice = fieldValue(operation, "dice_count");
       const sides = fieldValue(operation, "dice_sides");
       const bonus = fieldValue(operation, "fixed_value");
-      const formula = `${dice ? `${dice}d${sides}` : ""}${bonus ? `${dice ? " + " : ""}${bonus}` : ""}`;
+      const meaningfulBonus = bonus && Number(bonus) !== 0;
+      const formula = `${dice ? `${dice}d${sides}` : ""}${meaningfulBonus ? `${dice ? " + " : ""}${bonus}` : ""}`;
       if (!formula) return "Indique une valeur.";
-      if (type === "reduce_damage") return complete(`${subject} réduit les dégâts reçus de ${formula}`);
-      if (type === "reflect_damage") return complete(`${subject} réduit et renvoie ${formula} dégâts`);
-      if (type === "heal") return complete(`${subject} récupère ${formula} PV`);
-      if (type === "health_cost") return complete(`${subject} perd ${formula} PV`);
-      if (type === "temporary_health") return complete(`${subject} gagne ${formula} PV temporaires`);
-      if (type === "modify_attack_damage") return complete(`${subject} ajoute ${formula} dégâts à ses attaques`);
-      return complete(`${subject} reçoit ${formula} dégâts`);
+      if (type === "reduce_damage") return complete(`${subject} ${agree("réduit", "réduisent")} les dégâts reçus de ${formula}`);
+      if (type === "reflect_damage") return complete(`${subject} ${agree("réduit et renvoie", "réduisent et renvoient")} ${formula} dégâts`);
+      if (type === "heal") return complete(`${subject} ${agree("récupère", "récupèrent")} ${formula} PV`);
+      if (type === "health_cost") return complete(`${subject} ${agree("perd", "perdent")} ${formula} PV`);
+      if (type === "temporary_health") return complete(`${subject} ${agree("gagne", "gagnent")} ${formula} PV temporaires`);
+      if (type === "modify_attack_damage") return complete(`${subject} ${agree("ajoute", "ajoutent")} ${formula} dégâts à ${pluralSubject ? "leurs" : "ses"} attaques`);
+      const damageType = enabledField(operation, "damage_type");
+      const typeLabel = damageType?.options[damageType.selectedIndex]?.text.toLowerCase() || "";
+      return complete(`${subject} ${agree("subit", "subissent")} ${formula} dégâts${typeLabel ? ` ${typeLabel}` : ""}`);
     }
     if (type === "move") {
       const distance = fieldValue(operation, "distance_value");
@@ -94,13 +113,9 @@ if (normalizedEditor) {
   function updateCapabilityPreview() {
     const preview = normalizedEditor.querySelector("[data-capability-description-preview]");
     const incomplete = /^(Indique|Choisis|Décris|Complète)\b/;
-    const structureLevel = normalizedEditor.querySelector('[name="structure_level"]').value;
-    const sentences = structureLevel === "manual" ? []
-      : [...list.querySelectorAll("[data-normalized-operation]")]
+    const sentences = [...list.querySelectorAll("[data-normalized-operation]")]
       .map((operation) => effectPreview(operation))
       .filter((sentence) => sentence && !incomplete.test(sentence));
-    const manualDescription = normalizedEditor.querySelector('[name="manual_description"]').value.trim();
-    if (structureLevel !== "structured" && manualDescription) sentences.push(manualDescription);
     preview.replaceChildren(...sentences.map((sentence) => {
       const item = document.createElement("li");
       item.textContent = sentence;
@@ -121,15 +136,21 @@ if (normalizedEditor) {
   }
 
   function updateGeneralFields() {
-    const triggerHidden = normalizedEditor.querySelector('[name="execution_mode"]').value !== "triggered";
+    const executionMode = normalizedEditor.querySelector('[name="execution_mode"]').value;
+    const permanent = executionMode === "permanent";
+    const triggerHidden = executionMode !== "triggered";
     normalizedEditor.querySelector("[data-trigger-field]").hidden = triggerHidden;
     normalizedEditor.querySelector('[name="trigger_event"]').disabled = triggerHidden;
-    const rechargeHidden = !normalizedEditor.querySelector('[name="uses_maximum"]').value;
+    const actionField = normalizedEditor.querySelector("[data-action-field]");
+    actionField.hidden = permanent;
+    actionField.querySelector("select").disabled = permanent;
+    const atWill = normalizedEditor.querySelector('[name="activation_limit"]').value === "at_will";
+    const usesField = normalizedEditor.querySelector("[data-uses-field]");
+    usesField.hidden = permanent || atWill;
+    usesField.querySelector("input").disabled = permanent || atWill;
+    const rechargeHidden = permanent || atWill || !normalizedEditor.querySelector('[name="uses_maximum"]').value;
     normalizedEditor.querySelector("[data-recharge-field]").hidden = rechargeHidden;
     normalizedEditor.querySelector('[name="recharge"]').disabled = rechargeHidden;
-    const descriptionHidden = normalizedEditor.querySelector('[name="structure_level"]').value === "structured";
-    normalizedEditor.querySelector("[data-manual-description]").hidden = descriptionHidden;
-    normalizedEditor.querySelector('[name="manual_description"]').disabled = descriptionHidden;
     updateCapabilityPreview();
   }
 
@@ -151,16 +172,32 @@ if (normalizedEditor) {
       toggleOperation(operation);
     });
     operation.querySelector("[data-remove-normalized-operation]").addEventListener("click", () => {
-      if (list.querySelectorAll("[data-normalized-operation]").length > 1) operation.remove();
+      if (list.querySelectorAll("[data-normalized-operation]").length > 1
+          && window.confirm("Supprimer cet effet ?")) operation.remove();
       renumber();
+    });
+    operation.querySelector("[data-duplicate-normalized-operation]").addEventListener("click", () => {
+      const copy = operation.cloneNode(true);
+      operation.after(copy);
+      bind(copy);
+      renumber();
+    });
+    operation.querySelectorAll("[data-move-operation]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.moveOperation === "up" && operation.previousElementSibling) {
+          list.insertBefore(operation, operation.previousElementSibling);
+        } else if (button.dataset.moveOperation === "down" && operation.nextElementSibling) {
+          list.insertBefore(operation.nextElementSibling, operation);
+        }
+        renumber();
+      });
     });
   }
 
   list.querySelectorAll("[data-normalized-operation]").forEach(bind);
   normalizedEditor.querySelector('[name="execution_mode"]').addEventListener("change", updateGeneralFields);
-  normalizedEditor.querySelector('[name="structure_level"]').addEventListener("change", updateGeneralFields);
   normalizedEditor.querySelector('[name="uses_maximum"]').addEventListener("input", updateGeneralFields);
-  normalizedEditor.querySelector('[name="manual_description"]').addEventListener("input", updateCapabilityPreview);
+  normalizedEditor.querySelector('[name="activation_limit"]').addEventListener("change", updateGeneralFields);
   normalizedEditor.querySelector("[data-add-normalized-operation]").addEventListener("click", () => {
     const operation = template.content.firstElementChild.cloneNode(true);
     list.append(operation);

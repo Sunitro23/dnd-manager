@@ -1,11 +1,13 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from app import create_app
 from dnd_manager.infrastructure.database import get_db, init_db
+from dnd_manager.infrastructure.database import migrate_removed_path_fields
 from dnd_manager.paths.repository import find_path
-from dnd_manager.paths.normalized import capability_description
+from dnd_manager.paths.json_catalog import synchronize_catalog
 from dnd_manager.ruleset.sqlite_catalog import SqliteRulesetCatalog
 
 
@@ -60,16 +62,98 @@ class CatalogueDatabaseValidationTestCase(unittest.TestCase):
             self.assertIn("augmentent toutes leurs Défenses de +1", rempart["ranks"][2]["active"]["effect"])
             self.assertIn("cet allié n’en subit que la moitié", rempart["ranks"][4]["active"]["effect"])
 
-    def test_hybrid_description_keeps_generated_effects_and_manual_details(self):
-        description = capability_description(
-            "hybrid", "Le personnage réduit les dégâts reçus de 1d8.",
-            "Il doit porter un bouclier.",
-        )
-        self.assertEqual(
-            description,
-            "Le personnage réduit les dégâts reçus de 1d8. Il doit porter un bouclier.",
-        )
+    def test_action_capabilities_are_activated_by_the_player(self):
+        with self.app.app_context():
+            init_db()
+            database = get_db()
+            names = ("Flamme noire", "Piège incendiaire", "Blizzard blanc", "Ordre impérieux")
+            placeholders = ",".join("?" for _name in names)
+            rows = database.execute(
+                f"SELECT name,execution_mode,action_cost,trigger_event FROM path_capability "
+                f"WHERE name IN ({placeholders})", names,
+            ).fetchall()
+            self.assertEqual({row["name"] for row in rows}, set(names))
+            for row in rows:
+                self.assertEqual(row["execution_mode"], "activated")
+                self.assertIsNone(row["trigger_event"])
+                self.assertNotEqual(row["action_cost"], "none")
 
+    def test_json_catalog_is_authoritative(self):
+        with self.app.app_context():
+            init_db()
+            filename = Path(self.app.config["PATH_CATALOG_JSON"])
+            payload = json.loads(filename.read_text(encoding="utf-8"))
+            payload["classes"][0]["name"] = "Classe modifiée en JSON"
+            removed_path = payload["voies"].pop()
+            payload["voies"].append({
+                "stable_key": "path.test.guide-debutant", "type": "class",
+                "origine": payload["classes"][0]["stable_key"],
+                "name": "Voie créée en JSON", "abilities": "FOR",
+                "status": "draft", "rangs": [],
+            })
+            filename.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+
+            synchronize_catalog(get_db(), filename)
+
+            row = get_db().execute(
+                "SELECT name FROM character_class WHERE stable_key=?",
+                (payload["classes"][0]["stable_key"],),
+            ).fetchone()
+            self.assertEqual(row["name"], "Classe modifiée en JSON")
+            created = get_db().execute(
+                "SELECT status FROM path_definition WHERE stable_key='path.test.guide-debutant'"
+            ).fetchone()
+            self.assertEqual(created["status"], "draft")
+            removed = get_db().execute(
+                "SELECT 1 FROM path_definition WHERE stable_key=?",
+                (removed_path["stable_key"],),
+            ).fetchone()
+            self.assertIsNone(removed)
+
+    def test_removed_path_text_fields_are_migrated_to_manual_effects(self):
+        with self.app.app_context():
+            init_db()
+            database = get_db()
+            database.execute(
+                "ALTER TABLE path_capability ADD COLUMN structure_level TEXT NOT NULL "
+                "DEFAULT 'structured'"
+            )
+            database.execute(
+                "ALTER TABLE path_capability ADD COLUMN manual_description TEXT NOT NULL DEFAULT ''"
+            )
+            database.execute(
+                "ALTER TABLE path_rank ADD COLUMN unlock_note TEXT NOT NULL DEFAULT ''"
+            )
+            capability = database.execute(
+                "SELECT pc.id,pc.path_rank_id FROM path_capability pc ORDER BY pc.id LIMIT 1"
+            ).fetchone()
+            database.execute(
+                "UPDATE path_capability SET manual_description='Ancienne précision.' WHERE id=?",
+                (capability["id"],),
+            )
+            database.execute(
+                "UPDATE path_rank SET unlock_note='Ancienne règle du rang.' WHERE id=?",
+                (capability["path_rank_id"],),
+            )
+
+            migrate_removed_path_fields(database)
+
+            capability_columns = {row["name"] for row in database.execute(
+                "PRAGMA table_info(path_capability)"
+            ).fetchall()}
+            rank_columns = {row["name"] for row in database.execute(
+                "PRAGMA table_info(path_rank)"
+            ).fetchall()}
+            self.assertFalse({"structure_level", "manual_description"} & capability_columns)
+            self.assertNotIn("unlock_note", rank_columns)
+            labels = {row["label"] for row in database.execute(
+                "SELECT label FROM effect_node WHERE capability_id=? AND node_type='manual_effect'",
+                (capability["id"],),
+            ).fetchall()}
+            self.assertIn("Ancienne précision.", labels)
+            self.assertIn("Ancienne règle du rang.", labels)
 
 if __name__ == "__main__":
     unittest.main()

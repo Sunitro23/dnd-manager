@@ -4,7 +4,7 @@
   <section class="path-editor-page path-definition-page">
     <p class="eyebrow">Administration MJ</p>
     <h1>{{ "Modifier" if path else "Créer" }} une voie</h1>
-    <p class="field-note">Définis la voie et ses rangs ici, puis ajoute les capacités avec l’éditeur dédié.</p>
+    <p class="field-note">Modifie la voie et développe uniquement le rang sur lequel tu travailles.</p>
 
     {% set selected_type = request.form.get('path_type', path['path_type'] if path else 'class') %}
     <form method="post" data-path-definition-form>
@@ -35,27 +35,28 @@
         <div class="rank-definition-list">
           {% for number in range(1, 6) %}
             {% set rank = path['ranks'][number - 1] if path and path['ranks']|length >= number and path['ranks'][number - 1]['rank'] == number else none %}
-            <article class="path-rank-editor">
+            <details class="path-rank-editor" data-path-rank {% if number == 1 %}open{% endif %}>
+              <summary><strong>Rang {{ number }} — {{ rank['name'] if rank else 'Nouveau rang' }}</strong><span>{{ rank.get('capability_details', [])|length if rank else 0 }} capacité{{ 's' if rank and rank.get('capability_details', [])|length != 1 else '' }}</span><span class="button button-secondary">Modifier</span></summary>
               <header class="operation-heading"><h3>Rang {{ number }}</h3>{% if path %}<a class="button button-secondary" href="{{ url_for('main.capability_create', path_type=path['path_type'], path_id=path['id'], rank=number) }}">Ajouter une capacité</a>{% endif %}</header>
-              <div class="field-grid field-grid-three">
-                <div><label for="rank_{{ number }}_name">Nom du rang</label><input id="rank_{{ number }}_name" name="rank_{{ number }}_name" maxlength="100" required value="{{ request.form.get('rank_' ~ number ~ '_name', rank['name'] if rank else '') }}"></div>
+              <div class="field-grid">
+                <div><label for="rank_{{ number }}_name">Titre du rang</label><input id="rank_{{ number }}_name" name="rank_{{ number }}_name" maxlength="100" required value="{{ request.form.get('rank_' ~ number ~ '_name', rank['name'] if rank else '') }}"></div>
                 <div><label for="rank_{{ number }}_unlock_level">Niveau minimal</label><input id="rank_{{ number }}_unlock_level" name="rank_{{ number }}_unlock_level" type="number" min="1" placeholder="Aucun" value="{{ request.form.get('rank_' ~ number ~ '_unlock_level', rank.get('unlock_level', '') if rank else '') or '' }}"></div>
-                <div><label for="rank_{{ number }}_unlock_note">Autre condition</label><input id="rank_{{ number }}_unlock_note" name="rank_{{ number }}_unlock_note" placeholder="Aucune" value="{{ request.form.get('rank_' ~ number ~ '_unlock_note', rank.get('unlock_note', '') if rank else '') or '' }}"></div>
               </div>
               {% if path %}
                 <div class="rank-capability-list">
                   {% for item in rank.get('capability_details', []) %}
                     <article class="admin-list-item">
-                      <div><strong>{{ item['name'] }}</strong><small class="muted">{{ item['execution_mode'] }} · {{ item['execution_support'] }}</small></div>
+                      {% set support_label = {'full':'Description complète','partial':'Description incomplète','none':'Effets incomplets'}[item['execution_support']] %}
+                      <div><strong>{{ item['name'] }}</strong><small class="muted">{{ item['execution_mode_label'] }} · {{ item['action_cost_label'] }} · {{ item['uses_label'] }} — {{ support_label }}</small></div>
                       <div class="item-actions">
                         <a class="button button-secondary" href="{{ url_for('main.capability_edit', path_type=path['path_type'], path_id=path['id'], rank=number, capability_id=item['id']) }}">Modifier</a>
-                        <button type="submit" class="button-secondary" formmethod="post" formaction="{{ url_for('main.capability_delete', path_type=path['path_type'], path_id=path['id'], capability_id=item['id']) }}">Supprimer</button>
+                        <button type="submit" class="button-danger-quiet" data-confirm-delete="Supprimer définitivement la capacité « {{ item['name'] }} » ?" formmethod="post" formaction="{{ url_for('main.capability_delete', path_type=path['path_type'], path_id=path['id'], capability_id=item['id']) }}">Supprimer</button>
                       </div>
                     </article>
                   {% else %}<p class="muted">Aucune capacité pour ce rang.</p>{% endfor %}
                 </div>
               {% else %}<p class="field-note">Enregistre d’abord la voie pour pouvoir ajouter ses capacités.</p>{% endif %}
-            </article>
+            </details>
           {% endfor %}
         </div>
         <div class="form-actions"><button type="submit">Enregistrer la voie</button><a class="button button-secondary" href="{{ url_for('main.paths_catalog') }}">Fermer</a></div>

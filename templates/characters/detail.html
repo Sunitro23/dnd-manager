@@ -1,25 +1,32 @@
 {% extends "base.html" %}
 {% block title %}{{ character["name"] }} · Gestionnaire JDR{% endblock %}
+{% from "paths/_rank_display.html" import render_rank %}
 {% block content %}
 <article class="character-sheet">
   <header class="character-header">
+    <form class="soul-counter header-soul-counter" method="post"
+          action="{{ url_for('characters.update_souls', character_id=character['id']) }}"
+          data-async-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="character-souls">Âmes</label>
+      <input id="character-souls" name="souls" type="number" min="0" step="1"
+             value="{{ character['souls'] }}" inputmode="numeric" required>
+      <button type="submit" aria-label="Enregistrer le nombre d’âmes">✓</button>
+    </form>
     <div>
-      <p class="eyebrow">
-        {{ character["character_type"] }}
-        {% if is_gm() and character["visibility"] == "gm" %}· Secret MJ{% endif %}
-      </p>
+      {% if is_gm() and character["visibility"] == "gm" %}
+        <p class="eyebrow">Secret MJ</p>
+      {% endif %}
       <h1>{{ character["name"] }}</h1>
     </div>
-    {% if character["level"] < 20 %}
-      <form class="header-level-up"
+      <form class="header-level-up{% if character['level'] < 20 %} is-available{% endif %}"
             method="post"
             action="{{ url_for('characters.level_up', character_id=character['id']) }}"
             data-confirm="Monter {{ character['name'] }} au niveau {{ character['level'] + 1 }} ?"
             data-async-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">Level up</button>
+        <button type="submit" {% if character["level"] >= 20 %}disabled{% endif %}>{{ "Level up" if character["level"] < 20 else "Niveau max" }}</button>
       </form>
-    {% endif %}
   </header>
   <p class="save-status" aria-live="polite" hidden></p>
   <nav class="sheet-tabs" aria-label="Sections de la fiche">
@@ -166,6 +173,7 @@
         ] %}
           <div class="defense-token defense-{{ field }}" tabindex="0">
             <div class="defense-face"><strong>{{ "%+d"|format(defenses[field]) }}</strong></div>
+            <span class="defense-name">{{ label }}</span>
             <div class="defense-breakdown" role="tooltip">
               <b>{{ label }} · {{ "%+d"|format(defenses[field]) }}</b>
               {% for part in defense_breakdowns[field] %}
@@ -244,8 +252,28 @@
 
   <section class="progression-panel" data-sheet-panel="paths">
     <div class="path-balance">
-      <span><strong>{{ available_path_points }}</strong>
+      <span class="available-path-points{% if available_path_points > 0 %} has-points{% endif %}"><strong>{{ available_path_points }}</strong>
         point{{ "s" if available_path_points != 1 }} disponible{{ "s" if available_path_points != 1 }}</span>
+      <div class="mortal-damage mortal-damage-{{ character['mortal_damage'] }}"
+           aria-label="Dégâts mortels">
+        <span>Dégâts mortels</span>
+        {% for number in range(1, 4) %}
+          {% set active = character['mortal_damage'] >= number %}
+          <form method="post" action="{{ url_for('characters.update_mortal_damage', character_id=character['id']) }}"
+                data-async-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="mortal_damage"
+                   value="{{ number - 1 if character['mortal_damage'] == number else number }}">
+            <button type="submit" class="mortal-skull{% if active %} is-active{% endif %}"
+                    aria-pressed="{{ 'true' if active else 'false' }}"
+                    aria-label="{{ 'Retirer' if character['mortal_damage'] == number else 'Atteindre' }} {{ number }} dégât{{ 's' if number > 1 }} mortel{{ 's' if number > 1 }}"
+                    title="{{ number }}/3 dégâts mortels">☠</button>
+          </form>
+        {% endfor %}
+        <strong class="mortal-state{% if character['mortal_damage'] == 3 %} is-dead{% endif %}">
+          {{ 'Mort' if character['mortal_damage'] == 3 else character['mortal_damage'] ~ '/3' }}
+        </strong>
+      </div>
     </div>
     <div class="path-lanes" aria-label="Améliorations des voies">
       {% for path in paths %}
@@ -253,7 +281,7 @@
         {% set unlocked_count = unlocked_ranks[path_key]|length %}
         <article class="path-lane">
           <header>
-            <small>{{ "Classe" if path["path_type"] == "class" else "Race" }}</small>
+            <small>{{ {"class": "Classe", "racial": "Race", "custom": "Personnage"}[path["path_type"]] }}</small>
             <b>{{ path["name"] }}</b>
             <span>{{ unlocked_count }}/5</span>
           </header>
@@ -262,9 +290,17 @@
             {% set rank_number = rank["rank"] %}
             <li class="rank-step
                        {% if rank_number in unlocked_ranks[path_key] %}is-acquired
-                       {% elif rank_number == unlocked_count + 1 %}is-next
+                       {% elif rank_number == unlocked_count + 1 and available_path_points > 0 %}is-next is-buyable-now
+                       {% elif rank_number == unlocked_count + 1 %}is-next is-waiting
                        {% else %}is-locked{% endif %}"
-                tabindex="0">
+                tabindex="0"
+                {% if path["path_type"] == "custom" %}
+                  role="button" aria-haspopup="dialog"
+                  data-custom-rank-open
+                  data-custom-rank="{{ rank_number }}"
+                  data-custom-description="{{ rank['custom_description'] }}"
+                  data-custom-action="{{ url_for('characters.update_custom_path_rank', character_id=character['id'], rank=rank_number) }}"
+                {% endif %}>
               {% if rank_number in unlocked_ranks[path_key] %}
                 <span class="rank-node is-unlocked" aria-label="Rang débloqué">✓</span>
               {% elif rank_number == unlocked_count + 1 and available_path_points > 0 %}
@@ -285,25 +321,8 @@
               {% endif %}
               <span class="rank-name"><small>Rang {{ rank_number }}</small>{{ rank["name"] }}</span>
               <div class="rank-tooltip" role="tooltip">
-                <b>{{ path["name"] }} · {{ rank["name"] }}</b>
-                {% if not rank["capability_details"] and (rank["unlock_level"] or rank["unlock_note"]) %}
-                  <ul class="path-effect-list rank-unlock-conditions">
-                    {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
-                    {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
-                  </ul>
-                {% endif %}
-                {% for capability in rank["capability_details"] %}
-                  {% if rank["capability_details"]|length > 1 %}<strong>{{ capability["name"] }}</strong>{% endif %}
-                  <small>{{ capability["execution_mode"] }}{% if capability["action_cost"] != 'none' %} · {{ capability["action_cost"] }}{% endif %}</small>
-                  {% if loop.first and (rank["unlock_level"] or rank["unlock_note"]) %}
-                    <ul class="path-effect-list rank-unlock-conditions">
-                      {% if rank["unlock_level"] %}<li>Niveau minimal : {{ rank["unlock_level"] }}</li>{% endif %}
-                      {% if rank["unlock_note"] %}<li>Condition : {{ rank["unlock_note"] }}</li>{% endif %}
-                    </ul>
-                  {% endif %}
-                  {% set effect_parts = effect_sentences(capability["description"]) %}
-                  <ul class="path-effect-list">{% for part in effect_parts %}<li>{{ part }}</li>{% endfor %}</ul>
-                {% endfor %}
+                <b>{{ path["name"] }}</b>
+                {{ render_rank(rank) }}
               </div>
             </li>
           {% endfor %}
@@ -312,6 +331,30 @@
       {% endfor %}
     </div>
   </section>
+
+  {% if character["character_type"] == "player" %}
+    <dialog class="custom-path-dialog" data-custom-path-dialog aria-labelledby="custom-path-dialog-title">
+      <header>
+        <div>
+          <small>Voie personnelle</small>
+          <h2 id="custom-path-dialog-title" data-custom-path-title>Modifier le rang</h2>
+        </div>
+        <button type="button" class="custom-path-dialog-close" data-custom-path-close
+                aria-label="Fermer">×</button>
+      </header>
+      <form method="post" data-custom-path-form data-async-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="custom-path-description">Texte du rang</label>
+        <textarea id="custom-path-description" name="description" maxlength="2000"
+                  placeholder="Décris simplement ce que ce rang apporte au personnage."
+                  data-custom-path-description></textarea>
+        <div class="form-actions">
+          <button type="submit">Enregistrer</button>
+          <button type="button" class="button button-secondary" data-custom-path-close>Annuler</button>
+        </div>
+      </form>
+    </dialog>
+  {% endif %}
 
   <section class="inline-inventory" data-sheet-panel="equipment">
     {% set slots = namespace(hands=0, accessories=0) %}
@@ -641,6 +684,17 @@
                          data-icon-url="{{ url_for('characters.item_icon_library',
                            item_type=item['item_type']) }}">
                   <summary hidden>Galerie d’icônes</summary>
+                  <nav class="item-icon-categories" aria-label="Catégories d’icônes"
+                       data-icon-categories>
+                    {% for value, label in [
+                      ('items', 'Objets'), ('weapons', 'Armes'),
+                      ('shields', 'Boucliers'), ('armor', 'Armures'),
+                      ('spells', 'Sorts'), ('rings', 'Anneaux'),
+                      ('arrows', 'Projectiles'), ('tools', 'Catalyseurs')
+                    ] %}
+                      <button type="button" data-icon-category="{{ value }}">{{ label }}</button>
+                    {% endfor %}
+                  </nav>
                   <div data-icon-options></div>
                   <button type="button" data-load-more-icons hidden>Plus d’icônes</button>
                 </details>

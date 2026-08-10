@@ -106,7 +106,47 @@ def load_paths(database, character):
     paths = []
     for specification in path_specifications(character):
         paths.extend(load_path_type(database, *specification))
+    if character["character_type"] == "player":
+        paths.append(load_custom_path(database, character["id"]))
     return tuple(paths)
+
+
+def load_custom_path(database, character_id):
+    descriptions = {
+        row["rank"]: row["description"]
+        for row in database.execute(
+            "SELECT rank,description FROM character_custom_rank WHERE character_id=?",
+            (character_id,),
+        ).fetchall()
+    }
+    return {
+        "id": character_id,
+        "path_type": "custom",
+        "name": "Voie personnelle",
+        "abilities": "",
+        "ranks": [custom_rank(number, descriptions.get(number, "")) for number in range(1, 6)],
+    }
+
+
+def custom_rank(number, description):
+    capability = {
+        "name": f"Rang {number}",
+        "simple_text": True,
+        "execution_mode": "permanent",
+        "action_cost": "none",
+        "execution_mode_label": "Texte libre",
+        "action_cost_label": "Aucune action",
+        "uses_label": "",
+        "description_items": [description] if description else [],
+    }
+    return {
+        "rank": number,
+        "name": f"Rang {number}",
+        "unlock_level": None,
+        "capability_details": [capability],
+        "permanent_bonuses": {},
+        "custom_description": description,
+    }
 
 
 def path_specifications(character):

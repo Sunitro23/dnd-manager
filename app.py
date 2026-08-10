@@ -74,7 +74,11 @@ def require_api_credentials(app):
 def runtime_paths(app):
     database = os.environ.get("DATABASE_PATH", str(Path(app.instance_path) / "dnd_manager.sqlite3"))
     portraits = os.environ.get("PORTRAIT_PATH", str(Path(app.instance_path) / "portraits"))
+    catalogue = os.environ.get(
+        "PATH_CATALOG_JSON", str(Path(app.root_path) / "data" / "voies.json")
+    )
     return {"DATABASE_PATH": database, "PORTRAIT_PATH": portraits,
+            "PATH_CATALOG_JSON": catalogue,
             "OPENAPI_PATH": str(Path(app.root_path) / "openapi.yaml"),
             "API_PUBLIC": environment_flag("API_PUBLIC", True),
             "SESSION_COOKIE_SECURE": environment_flag("SESSION_COOKIE_SECURE")}
@@ -83,6 +87,9 @@ def runtime_paths(app):
 def apply_test_config(app, test_config):
     if test_config:
         app.config.update(test_config)
+        if app.config.get("TESTING") and "PATH_CATALOG_JSON" not in test_config:
+            database_path = Path(app.config["DATABASE_PATH"])
+            app.config["PATH_CATALOG_JSON"] = str(database_path.parent / "voies.json")
 
 
 def prepare_storage(app):

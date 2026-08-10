@@ -33,7 +33,7 @@ def next_rank(state, command):
 
 
 def require_path_type(path_type):
-    if path_type not in {"class", "racial"}:
+    if path_type not in {"class", "racial", "custom"}:
         raise InvalidRequest("Type de voie invalide.")
 
 

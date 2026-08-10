@@ -1,0 +1,466 @@
+.path-lanes {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.path-balance {
+  justify-content: space-between;
+}
+
+.header-level-up button {
+  min-width: 132px;
+  min-height: 36px;
+  padding-top: .35rem;
+  padding-bottom: .35rem;
+  padding-inline: 1.2rem;
+  border-color: #51482f;
+  background: #11110d;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.header-level-up.is-available button {
+  border-color: #d5b765;
+  background: linear-gradient(#3a301a, #1e190f);
+  color: #ffe6a0;
+  box-shadow: 0 0 0 1px #e7c56c38, 0 0 14px #b58d3438;
+}
+
+.header-level-up.is-available button:hover,
+.header-level-up.is-available button:focus-visible {
+  border-color: #f0d17b;
+  box-shadow: 0 0 0 1px #f0d17b66, 0 0 20px #c59b465c;
+}
+
+.header-level-up button:disabled {
+  opacity: .42;
+  cursor: default;
+}
+
+.sheet-overview > div:first-child,
+.sheet-overview > div:last-child,
+.compact-abilities .ability-display,
+.character-facts {
+  border-color: #302d23;
+}
+
+.compact-abilities .ability-display > strong {
+  font-size: 1.9rem;
+}
+
+.vitals-panel .hp-display > strong {
+  font-size: 2.3rem;
+}
+
+.defense-face strong {
+  font-size: calc(1.35rem + 2px);
+}
+
+.defense-token {
+  text-align: center;
+}
+
+.defense-name {
+  display: block;
+  margin-top: .15rem;
+  color: #c8c0ae;
+  font-size: .62rem;
+  letter-spacing: .04em;
+}
+
+.character-facts dt,
+.character-facts .bonus-fact dt {
+  color: #9f957e;
+  font-size: .58rem;
+  letter-spacing: .08em;
+}
+
+.available-path-points strong {
+  color: var(--muted);
+}
+
+.available-path-points.has-points,
+.available-path-points.has-points strong {
+  color: #f0cb72;
+}
+
+.available-path-points.has-points strong {
+  text-shadow: 0 0 10px #c99b3f66;
+}
+
+.soul-counter {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+.character-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding-top: .35rem;
+  padding-bottom: .4rem;
+}
+
+.character-header > div {
+  width: auto;
+  min-width: 220px;
+  grid-column: 2;
+}
+
+.character-header h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 2.55rem);
+  line-height: 1;
+}
+
+.character-header .eyebrow {
+  margin-bottom: .15rem;
+}
+
+.character-header .header-level-up {
+  position: static;
+  grid-column: 3;
+  justify-self: end;
+  margin: 0;
+}
+
+.header-soul-counter {
+  width: max-content;
+  grid-column: 1;
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.soul-counter label {
+  color: var(--accent);
+  font-size: .72rem;
+  text-transform: uppercase;
+}
+
+.soul-counter input {
+  width: 105px;
+  min-height: 30px;
+  margin: 0;
+  padding: .3rem .45rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.soul-counter button {
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+
+.mortal-damage,
+.mortal-damage form {
+  display: flex;
+  align-items: center;
+}
+
+.mortal-damage {
+  margin-left: auto;
+  gap: .28rem;
+}
+
+.mortal-damage > span {
+  margin-right: .35rem;
+  color: var(--muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+}
+
+.mortal-skull {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid #5b5546;
+  border-radius: 50%;
+  background: #090a08;
+  color: #615d52;
+  font-size: 1.25rem;
+  line-height: 1;
+  filter: grayscale(1);
+}
+
+.mortal-skull:hover,
+.mortal-skull:focus-visible {
+  border-color: #c9b98c;
+  color: #ddd4bd;
+}
+
+.mortal-skull.is-active {
+  border-color: #b7493d;
+  background: #30100d;
+  color: #f0d8c8;
+  filter: none;
+  box-shadow: 0 0 10px #a62d2470;
+}
+
+.mortal-damage-0 .mortal-skull {
+  opacity: .48;
+}
+
+.mortal-damage-1 .mortal-skull.is-active {
+  border-color: #a86c45;
+  background: #24160e;
+  color: #d8b89b;
+  box-shadow: 0 0 7px #8c4e2d4a;
+}
+
+.mortal-damage-2 .mortal-skull.is-active {
+  border-color: #c84b3e;
+  background: #32100d;
+  color: #f0c5b6;
+  box-shadow: 0 0 11px #b733285c;
+}
+
+.mortal-damage-3 .mortal-skull.is-active {
+  border-color: #ee4035;
+  background: #4a0b08;
+  color: #fff0e8;
+  box-shadow: 0 0 15px #e1261b8a;
+}
+
+.path-lane {
+  transition: background-color 120ms ease;
+}
+
+.path-lane:hover,
+.path-lane:focus-within {
+  background: #17150e8c;
+}
+
+.rank-node.is-unlocked {
+  border-color: #e1c36c;
+  background: #9a7926;
+  color: #fff7d2;
+  box-shadow: inset 0 0 0 1px #efd47a55;
+}
+
+.rank-step.is-acquired .rank-name {
+  color: #f4efe1;
+}
+
+.rank-node.is-buyable {
+  border: 2px solid #e4c463;
+  background: #090906;
+  color: #f0ce6d;
+  box-shadow: 0 0 0 3px #b793343d, 0 0 13px #d5ac496b;
+}
+
+.rank-step.is-buyable-now .rank-name {
+  color: #e5c56c;
+}
+
+.rank-step.is-waiting .rank-name {
+  color: #777164;
+}
+
+.rank-step.is-locked {
+  opacity: .3;
+}
+
+.rank-step.is-locked .rank-node {
+  border-color: #3c392f;
+  background: #080906;
+}
+
+.vitals-panel .portrait-control img {
+  opacity: .9;
+  filter: sepia(.3) grayscale(.08) contrast(1.12) brightness(1.12);
+}
+
+.mortal-state {
+  min-width: 34px;
+  margin-left: .25rem;
+  color: var(--muted);
+  font-size: .72rem;
+  text-align: center;
+}
+
+.mortal-state.is-dead {
+  color: #e15b4e;
+  text-transform: uppercase;
+}
+
+.inventory-icon-preview {
+  width: 132px;
+  height: 132px;
+  padding: .6rem;
+}
+
+.item-icon-categories {
+  margin: .55rem 0 .35rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .25rem;
+}
+
+.item-icon-categories button {
+  min-width: 0;
+  min-height: 32px;
+  padding: .25rem .3rem;
+  border-color: #493f29;
+  border-radius: 0;
+  overflow: hidden;
+  background: #0b0c09;
+  color: var(--muted);
+  font-size: .64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-icon-categories button.is-active {
+  border-color: var(--accent);
+  background: #27200f;
+  color: #fff1bd;
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.item-icon-picker [data-icon-options] {
+  max-height: 330px;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: .45rem;
+  padding: .55rem;
+}
+
+.item-icon-picker [data-icon-choice] {
+  height: 84px;
+  padding: 7px;
+}
+
+.custom-path-dialog {
+  width: min(760px, calc(100vw - 2rem));
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--accent);
+  background: #0b0c09;
+  color: var(--text);
+  box-shadow: 0 24px 70px #000e;
+}
+
+.custom-path-dialog::backdrop {
+  background: #000b;
+  backdrop-filter: blur(3px);
+}
+
+.custom-path-dialog > header {
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.custom-path-dialog h2,
+.custom-path-dialog header small {
+  margin: 0;
+}
+
+.custom-path-dialog header small {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.custom-path-dialog-close {
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.8rem;
+}
+
+.custom-path-dialog > form {
+  padding: 1.15rem;
+}
+
+.custom-path-dialog label {
+  display: block;
+  margin-bottom: .4rem;
+  color: var(--accent);
+}
+
+.custom-path-dialog textarea {
+  width: 100%;
+  min-height: 300px;
+  resize: vertical;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .path-lanes {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-path-dialog {
+    width: calc(100vw - 1rem);
+  }
+
+  .custom-path-dialog textarea {
+    min-height: 45vh;
+  }
+
+  .inventory-icon-preview {
+    width: 112px;
+    height: 112px;
+  }
+
+  .item-icon-categories {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .item-icon-picker [data-icon-options] {
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  }
+
+  .path-balance {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+
+  .header-soul-counter {
+    width: min(260px, 100%);
+    margin: 0 auto .55rem;
+    padding: 0 0 .55rem;
+    border-right: 0;
+    border-bottom: 1px solid #302d23;
+    justify-content: center;
+  }
+
+  .character-header {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .character-header > div {
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .character-header .header-soul-counter {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: center;
+  }
+
+  .character-header .header-level-up {
+    width: min(260px, 100%);
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: center;
+  }
+
+  .mortal-damage > span {
+    display: none;
+  }
+}

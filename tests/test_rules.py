@@ -9,6 +9,7 @@ from dnd_manager.characters.common.rules import (
     valid_point_buy,
 )
 from dnd_manager.shared.errors import InvalidRequest
+from dnd_manager.campaign.path_schema import describe_capability
 
 
 class RulesTestCase(unittest.TestCase):
@@ -49,6 +50,59 @@ class RulesTestCase(unittest.TestCase):
 
     def test_defense_adds_equipped_bonuses(self):
         self.assertEqual(defense(14, (2, -1, 3)), 6)
+
+    def test_manual_effect_uses_the_gm_description_without_technical_text(self):
+        description = describe_capability({
+            "targeting": {"selector": "self"},
+            "operations": [{"type": "custom_ability", "target": "self",
+                            "description": "Traverse les miroirs proches."}],
+        })
+        self.assertEqual(description, "Traverse les miroirs proches.")
+        self.assertNotIn("effet manuel", description)
+
+    def test_choice_lists_every_option(self):
+        description = describe_capability({
+            "targeting": {"selector": "self"},
+            "operations": [{"type": "choice", "target": "self",
+                            "options": ["Gagner 2 Défenses", "Se déplacer de 3 m"]}],
+        })
+        self.assertIn("Gagner 2 Défenses", description)
+        self.assertIn("Se déplacer de 3 m", description)
+
+    def test_area_effects_are_conjugated_in_the_plural(self):
+        description = describe_capability({
+            "targeting": {"selector": "all"},
+            "operations": [{"type": "modify_resource", "operation": "add",
+                            "resource": "health", "value": 4}],
+        })
+        self.assertIn("Les cibles dans la zone récupèrent 4 PV", description)
+
+    def test_plural_effects_agree_verbs_and_possessives(self):
+        capability = {
+            "targeting": {"selector": "multiple"},
+            "operations": [{"type": "modify_stat", "target": "selected",
+                            "stat": "defense.spiritual", "operation": "add", "value": 1}],
+        }
+        self.assertEqual(
+            describe_capability(capability),
+            "Les cibles augmentent leur Défense spirituelle de +1.",
+        )
+
+    def test_operation_target_reference_and_subtraction_drive_the_description(self):
+        description = describe_capability({
+            "targeting": {"selector": "single", "allegiance": ["enemy"]},
+            "operations": [{
+                "type": "modify_stat", "target": "selected",
+                "target_ref": "target.primary", "stat": "movement.walk",
+                "operation": "subtract", "value": 3,
+                "duration": {"value": 2, "unit": "turn"},
+            }],
+        })
+        self.assertEqual(
+            description,
+            "La cible principale réduit sa vitesse de déplacement à pied de 3 m "
+            "pendant 2 tours de l’utilisateur.",
+        )
 
 
 if __name__ == "__main__":

@@ -141,7 +141,8 @@ def commit_update(database, cursor):
 
 def find_character(database, character_id, public_only):
     visibility = "AND visibility = 'campaign'" if public_only else ""
-    query = f"SELECT id, level, class_id, species_id FROM character WHERE id = ? {visibility}"
+    query = (f"SELECT id, level, class_id, species_id, character_type "
+             f"FROM character WHERE id = ? {visibility}")
     return database.execute(query, (character_id,)).fetchone()
 
 
@@ -165,6 +166,8 @@ def next_rank_number(database, character_id, command):
 
 
 def path_available(database, character, command):
+    if command.path_type == "custom":
+        return command.path_id == character["id"] and character["character_type"] == "player"
     table, owner_column = PATHS[command.path_type]
     query = f"SELECT 1 FROM {table} WHERE id = ? AND {owner_column} = ? AND configured = 1"
     return database.execute(query, (command.path_id, character[owner_column])).fetchone() is not None
@@ -203,6 +206,8 @@ def find_action_character(database, character_id, public_only):
 
 
 def find_action_path(database, character, command):
+    if command.path_type == "custom":
+        return None
     path = find_canonical_path(database, command.path_type, command.path_id)
     owner_column = PATHS[command.path_type][1]
     return path if path and path[owner_column] == character[owner_column] else None

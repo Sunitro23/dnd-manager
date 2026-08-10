@@ -3,7 +3,6 @@ from dnd_manager.shared.errors import InvalidRequest
 
 EXECUTION_MODES = {"manual", "activated", "triggered", "permanent"}
 ACTION_COSTS = {"action", "bonus_action", "reaction", "free", "none"}
-STRUCTURE_LEVELS = {"manual", "hybrid", "structured"}
 TRIGGER_EVENTS = {
     "ally.targeted", "source.damaged", "target.damaged", "source.health_below_half",
     "source.health_zero", "turn.start", "attack.hit", "attack.missed", "combat.start",
@@ -32,13 +31,13 @@ OPERATION_MODES = {
 
 
 def capability_values(form, path_key):
+    execution_mode = choice(form, "execution_mode", EXECUTION_MODES)
     values = {
         "path_key": path_key,
         "name": required_text(form, "name", "Le nom de la capacité est obligatoire."),
-        "execution_mode": choice(form, "execution_mode", EXECUTION_MODES),
-        "action_cost": choice(form, "action_cost", ACTION_COSTS),
-        "structure_level": choice(form, "structure_level", STRUCTURE_LEVELS),
-        "manual_description": form.get("manual_description", "").strip(),
+        "execution_mode": execution_mode,
+        "action_cost": ("none" if execution_mode == "permanent"
+                        else choice(form, "action_cost", ACTION_COSTS)),
         "trigger_event": optional_choice(form, "trigger_event", TRIGGER_EVENTS),
         "activation_limit": optional_choice(form, "activation_limit", ACTIVATION_LIMITS),
         "uses_maximum": optional_positive_integer(form.get("uses_maximum")),
@@ -47,10 +46,49 @@ def capability_values(form, path_key):
     }
     if not values["operations"]:
         raise InvalidRequest("Ajoute au moins un effet à la capacité.")
+    validate_capability_consistency(values)
     values.update(inferred_targeting(values["operations"]))
-    if values["structure_level"] != "structured" and not values["manual_description"]:
-        raise InvalidRequest("Ajoute une description complémentaire pour cette capacité.")
     return values
+
+
+def validate_capability_consistency(values):
+    if values["execution_mode"] == "triggered" and not values["trigger_event"]:
+        raise InvalidRequest("Choisis le déclencheur de cette capacité.")
+    if values["execution_mode"] == "permanent":
+        values["action_cost"] = "none"
+        values["trigger_event"] = None
+        values["activation_limit"] = None
+        values["uses_maximum"] = None
+        values["recharge"] = None
+    if values["activation_limit"] == "at_will":
+        values["uses_maximum"] = None
+        values["recharge"] = None
+    elif values["uses_maximum"] and not values["recharge"]:
+        raise InvalidRequest("Choisis quand les utilisations sont récupérées.")
+    elif not values["uses_maximum"]:
+        values["recharge"] = None
+    for index, operation in enumerate(values["operations"], 1):
+        validate_operation_consistency(operation, index)
+
+
+def validate_operation_consistency(operation, index):
+    operation_type = operation["operation_type"]
+    if operation_type == "manual_effect" and not operation["description"]:
+        raise InvalidRequest(f"Décris la règle particulière de l’effet {index}.")
+    needs_value = {"damage", "heal", "health_cost", "health_floor", "temporary_health",
+                   "modify_attack_damage", "reduce_damage", "reflect_damage", "extra_attack"}
+    if operation_type in needs_value and not any(
+            operation[key] is not None for key in ("fixed_value", "dice_count")):
+        raise InvalidRequest(f"Indique la valeur de l’effet {index}.")
+    hostile = operation["target_ref"] in {"target.enemies"}
+    beneficial = operation_type in {"heal", "temporary_health", "modify_attack_damage",
+                                    "extra_attack", "grant_immunity"}
+    if operation_type == "modify_value":
+        beneficial = operation["operation_mode"] in {"add", "multiply", "grant_advantage"}
+    if hostile and beneficial:
+        raise InvalidRequest(
+            f"L’effet {index} renforce les ennemis. Choisis une autre cible ou une modification négative."
+        )
 
 
 def operations_from_form(form):

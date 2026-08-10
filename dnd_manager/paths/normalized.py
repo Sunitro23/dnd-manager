@@ -1,10 +1,18 @@
 import json
 
-from dnd_manager.campaign.path_schema import describe_capability
+from dnd_manager.campaign.path_schema import describe_capability, describe_capability_items
 
 
-STRUCTURE_LEVEL = {"manual": "manual", "partial": "hybrid", "full": "structured"}
 EXECUTABLE_OPERATIONS = {"damage", "heal", "health_cost"}
+EXECUTION_MODE_LABELS = {
+    "manual": "Manuelle", "activated": "Activée par le joueur",
+    "triggered": "Déclenchée automatiquement", "permanent": "Permanente",
+}
+ACTION_COST_LABELS = {
+    "action": "Action", "bonus_action": "Action bonus", "reaction": "Réaction",
+    "free": "Action libre", "none": "Aucune action",
+}
+RECHARGE_LABELS = {"short_rest": "repos court", "long_rest": "repos long"}
 
 
 def migrate_existing_capabilities(database):
@@ -51,12 +59,11 @@ def migrate_capability(database, path_key, rank_id, row):
     mode = execution_mode(row, trigger)
     capability_id = database.execute(
         "INSERT INTO path_capability "
-        "(path_rank_id,stable_key,name,execution_mode,action_cost,structure_level,"
-        "manual_description,trigger_event,activation_limit,uses_maximum,recharge,position) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "(path_rank_id,stable_key,name,execution_mode,action_cost,"
+        "trigger_event,activation_limit,uses_maximum,recharge,position) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
         (rank_id, f"{path_key}.rank-{row['rank']}.{row['mode']}", row["name"], mode,
-         action_cost(row["activation"]), STRUCTURE_LEVEL[row["support"]],
-         row["effect_manual"], trigger.get("type"), normalized_limit(row["frequency"]),
+         action_cost(row["activation"]), trigger.get("type"), normalized_limit(row["frequency"]),
          row["uses_maximum"], row["recharge"], position),
     ).lastrowid
     targeting = json.loads(row["targeting_json"] or "{}")
@@ -71,10 +78,19 @@ def migrate_capability(database, path_key, rank_id, row):
     ).fetchall()
     for operation in operations:
         migrate_operation(database, capability_id, root_id, operation, targeting)
+    if row["effect_manual"] and database.execute(
+            "SELECT 1 FROM effect_node WHERE capability_id=? AND node_type='manual_effect' "
+            "AND trim(label)=trim(?)", (capability_id, row["effect_manual"]),
+    ).fetchone() is None:
+        database.execute(
+            "INSERT INTO effect_node (capability_id,parent_id,node_type,label,position) "
+            "VALUES (?,?,'manual_effect',?,?)",
+            (capability_id, root_id, row["effect_manual"], len(operations)),
+        )
 
 
 def execution_mode(row, trigger):
-    if trigger:
+    if trigger.get("type"):
         return "triggered"
     if row["mode"] == "passive":
         return "permanent" if (row["frequency"] or "Permanent") == "Permanent" else "triggered"
@@ -220,7 +236,7 @@ def load_rank(database, row, path_key):
     result = {
         "id": f"{path_key}.rank-{row['rank']}", "rank": row["rank"],
         "name": row["name"], "unlock_level": row["unlock_level"],
-        "unlock_note": row["unlock_note"], "capability_details": details,
+        "capability_details": details,
         "capabilities": [item["contract"] for item in details],
         "active": None, "passive": None,
     }
@@ -254,46 +270,48 @@ def load_capability(database, row):
                                   for _item in manual_rows]
     support = execution_support(support_items)
     targeting = target_contract(target)
-    contract_operations = [legacy_contract_operation(item) for item in operations]
-    contract_operations.extend({"type": "custom_ability", "target": "self",
-                                "description": item["label"]} for item in manual_rows)
+    ordered_effects = sorted(operations + manual_effects, key=lambda item: item["position"])
+    contract_operations = [contract_operation(item) for item in ordered_effects]
     contract = {
-        "id": row["stable_key"], "support": structure_support(row["structure_level"]),
+        "id": row["stable_key"], "support": "full",
         "targeting": targeting, "operations": contract_operations,
     }
     if row["uses_maximum"]:
         contract["uses"] = {"maximum": row["uses_maximum"], "recharge": row["recharge"]}
     generated = describe_capability(contract) if contract_operations else ""
-    description = capability_description(
-        row["structure_level"], generated, row["manual_description"],
-    )
+    description_items = describe_capability_items(contract)
+    description = generated
     return {
         "id": row["id"], "stable_key": row["stable_key"], "name": row["name"],
         "execution_mode": row["execution_mode"], "action_cost": row["action_cost"],
-        "structure_level": row["structure_level"], "execution_support": support,
-        "description": description, "manual_description": row["manual_description"],
+        "execution_support": support, "description": description,
+        "description_items": description_items,
+        "execution_mode_label": EXECUTION_MODE_LABELS[row["execution_mode"]],
+        "action_cost_label": ACTION_COST_LABELS[row["action_cost"]],
+        "uses_label": capability_uses_label(row["uses_maximum"], row["recharge"]),
         "trigger_event": row["trigger_event"],
         "activation_limit": (None if row["execution_mode"] == "permanent"
                              else row["activation_limit"]),
         "uses_maximum": row["uses_maximum"],
         "recharge": row["recharge"], "targeting": dict(target) if target else {},
         "operations": operations, "manual_effects": manual_effects,
-        "editor_operations": sorted(operations + manual_effects,
-                                    key=lambda item: item["position"]),
+        "editor_operations": ordered_effects,
         "contract": contract,
     }
 
 
-def capability_description(structure_level, generated, manual):
-    if structure_level == "manual":
-        return manual
-    if structure_level == "hybrid":
-        return " ".join(part for part in (generated, manual) if part)
-    return generated
+def contract_operation(item):
+    if item["operation_type"] == "manual_effect":
+        return {"type": "custom_ability", "target": "self",
+                "description": item["description"]}
+    return legacy_contract_operation(item)
 
 
-def structure_support(level):
-    return {"manual": "manual", "hybrid": "partial", "structured": "full"}[level]
+def capability_uses_label(maximum, recharge):
+    if not maximum:
+        return "À volonté"
+    recovery = RECHARGE_LABELS.get(recharge, "récupération non définie")
+    return f"{maximum} fois · Récupération : {recovery}"
 
 
 def target_contract(row):
@@ -305,13 +323,27 @@ def target_contract(row):
     result = {"selector": selector}
     if row["allegiance"] and row["allegiance"] != "any":
         result["allegiance"] = [row["allegiance"]]
+    if row["range_value"] is not None:
+        result["range"] = {
+            "value": row["range_value"],
+            "unit": row["range_unit"] or "meter",
+        }
+    if row["selection_mode"] == "area" and row["area_size"] is not None:
+        result["area"] = {
+            "shape": row["area_shape"] or "radius",
+            "distance": {
+                "value": row["area_size"],
+                "unit": row["range_unit"] or "meter",
+            },
+        }
     return result
 
 
 def legacy_contract_operation(row):
     operation_type = row["operation_type"]
     result = {"type": legacy_operation_type(operation_type),
-              "target": "self" if row["target_ref"] == "source" else "selected"}
+              "target": "self" if row["target_ref"] == "source" else "selected",
+              "target_ref": row["target_ref"]}
     if operation_type in {"damage", "modify_attack_damage"}:
         result.update(damage_type=row["damage_type"] or "physical",
                       value=contract_value(row))
@@ -339,6 +371,8 @@ def legacy_contract_operation(row):
     elif operation_type == "move":
         result["distance"] = {"value": row["distance_value"],
                               "unit": row["distance_unit"] or "meter"}
+        if row["operation_mode"] == "away":
+            result["direction"] = "away"
     elif operation_type == "extra_attack":
         result["count"] = int(row["fixed_value"] or 1)
     else:
@@ -439,22 +473,20 @@ def save_capability(database, path_definition_id, rank_number, values, capabilit
         stable_key = f"{values['path_key']}.rank-{rank_number}.{slug_key(values['name'])}-{position + 1}"
         capability_id = database.execute(
             "INSERT INTO path_capability "
-            "(path_rank_id,stable_key,name,execution_mode,action_cost,structure_level,"
-            "manual_description,trigger_event,activation_limit,uses_maximum,recharge,position) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "(path_rank_id,stable_key,name,execution_mode,action_cost,"
+            "trigger_event,activation_limit,uses_maximum,recharge,position) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (rank_id, stable_key, values["name"], values["execution_mode"],
-             values["action_cost"], values["structure_level"], values["manual_description"],
-             values["trigger_event"], values["activation_limit"], values["uses_maximum"],
+             values["action_cost"], values["trigger_event"], values["activation_limit"], values["uses_maximum"],
              values["recharge"], position),
         ).lastrowid
     else:
         cursor = database.execute(
-            "UPDATE path_capability SET name=?,execution_mode=?,action_cost=?,structure_level=?,"
-            "manual_description=?,trigger_event=?,activation_limit=?,uses_maximum=?,recharge=? "
+            "UPDATE path_capability SET name=?,execution_mode=?,action_cost=?,"
+            "trigger_event=?,activation_limit=?,uses_maximum=?,recharge=? "
             "WHERE id=? AND path_rank_id=?",
             (values["name"], values["execution_mode"], values["action_cost"],
-             values["structure_level"], values["manual_description"], values["trigger_event"],
-             values["activation_limit"], values["uses_maximum"], values["recharge"],
+             values["trigger_event"], values["activation_limit"], values["uses_maximum"], values["recharge"],
              capability_id, rank_id),
         )
         if cursor.rowcount != 1:
@@ -521,10 +553,9 @@ def delete_capability(database, path_definition_id, capability_id):
 def update_rank_metadata(database, path_definition_id, ranks, form):
     for rank in ranks:
         database.execute(
-            "UPDATE path_rank SET name=?,unlock_level=?,unlock_note=? "
+            "UPDATE path_rank SET name=?,unlock_level=? "
             "WHERE path_definition_id=? AND rank=?",
             (rank["name"], optional_int(form.get(f"rank_{rank['rank']}_unlock_level")),
-             form.get(f"rank_{rank['rank']}_unlock_note", "").strip(),
              path_definition_id, rank["rank"]),
         )
     database.commit()
